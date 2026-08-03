@@ -1,26 +1,761 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+ * Gladiator — the Almanac.
+ *
+ * Design system: CLAUDE.md. Motion language and the named prompt catalogue: MOTION.md.
+ * This file implements both. Read them before adding anything here.
+ *
+ * The organising idea is a *printed almanac* — a two-ink broadsheet of the semester.
+ * Everything in this product is time and pressure (due dates, minutes of work, minutes
+ * available, the shape of the next three weeks), and a timetable is what that data has
+ * always wanted to be. So: warm uncoated paper, one structural ink, a small set of
+ * signal inks used only where attention is genuinely due, and structure carried by
+ * typographic rules and a hanging margin rather than by boxes.
+ *
+ * Three rules do most of the work:
+ *   1. The rule is the structure. Hairlines and the margin column build every page.
+ *      No cards, no radius, no shadow, no fill that isn't carrying meaning.
+ *   2. Ink means something. Plain ink is the calm state — the second plate only appears
+ *      where the data is warming or urgent. A page that is fine should look like a page
+ *      that is fine.
+ *   3. The figure is the hero. This is an almanac: the number gets the space, set huge
+ *      and tabular, and the prose explains it underneath.
+ */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ==========================================================================
+   PLATES
+   Two printings of the same design. The light plate is the primary — the dark
+   one is its negative, for reading the nightly digest at 11pm. Every colour in
+   the product resolves through these structural tokens plus three inks, so
+   inverting the plate is one block of CSS rather than a second theme.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* Stock. Warm and uncoated — a white page is a screenshot, not a print. */
+  --paper: #f2ede3;
+  --paper-deep: #e8e1d3;
+  --paper-lift: #f7f3ec;
+
+  /* Ink. Warm near-black; #000 on paper reads as a PDF, not a press. */
+  --ink: #15120e;
+  --ink-soft: #6b6458;
+  /* Was #A49C8C, which measured 2.33:1 on paper — under the 3:1 floor for the
+     marks and waterlines it draws, and well under 4.5:1 for the small figures
+     that were using it. Structural hairlines stay on --rule; this is for things
+     that must actually be read. */
+  --ink-faint: #8b8271;
+
+  /* Rules. The entire structural vocabulary of the layout. */
+  --rule: #cbc2b0;
+  --rule-soft: #ded7c8;
+
+  /*
+   * The signal inks — a heat ramp plus one affirmative. `calm` deliberately has
+   * no ink of its own at structural sites: see --status below.
+   */
+  --moss: #3c6a53; /* affirmative — closed, submitted, on track */
+  --ochre: #a86e18; /* warming — building up, due soon */
+  --vermilion: #c62f14; /* urgent — overdue, flagged, overloaded */
+
+  /* Ghost plate — the misregistered second impression behind display type. */
+  --ghost: color-mix(in srgb, var(--vermilion) 30%, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    color-scheme: dark;
+
+    --paper: #12100d;
+    --paper-deep: #1a1712;
+    --paper-lift: #1e1a15;
+
+    --ink: #f0ebe1;
+    --ink-soft: #948c7e;
+    --ink-faint: #7a7263;
+
+    --rule: #342f27;
+    --rule-soft: #241f1a;
+
+    /* Lifted for the negative plate — the same inks would go muddy on black. */
+    --moss: #7cb193;
+    --ochre: #dda246;
+    --vermilion: #ef6a4c;
+
+    --ghost: color-mix(in srgb, var(--vermilion) 38%, transparent);
   }
 }
 
+/* Tailwind sees the semantic tokens, not the raw hexes, so utilities invert too.
+   `static` so every token is emitted even when no utility references it — the
+   canvas-drawn trace and the pressure chart both read these at runtime. */
+@theme static {
+  --color-paper: var(--paper);
+  --color-paper-deep: var(--paper-deep);
+  --color-paper-lift: var(--paper-lift);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-faint: var(--ink-faint);
+  --color-rule: var(--rule);
+  --color-rule-soft: var(--rule-soft);
+  --color-moss: var(--moss);
+  --color-ochre: var(--ochre);
+  --color-vermilion: var(--vermilion);
+
+  /* Display — Instrument Serif. High contrast, editorial, built for 10rem. */
+  --font-display: var(--font-instrument), ui-serif, Georgia, serif;
+  /* Body and UI — Familjen Grotesk. Quiet, warm, a little Swedish. */
+  --font-sans: var(--font-familjen), ui-sans-serif, system-ui, sans-serif;
+  /* Docket — Spline Sans Mono. Serials, timestamps, provenance. Never paragraphs. */
+  --font-mono: var(--font-spline-mono), ui-monospace, monospace;
+}
+
+/* ==========================================================================
+   MEASURE
+   One gutter, one vertical rhythm, one margin rail. Pages compose from these
+   and never from a local value — consistent generous margins are most of what
+   separates a printed page from a dashboard.
+   ========================================================================== */
+
+:root {
+  --gutter: clamp(1.5rem, 5vw, 5.5rem);
+  --section: clamp(5rem, 9vw, 9rem);
+  --block: clamp(2rem, 3.5vw, 3.5rem);
+
+  /* The hanging margin: where serials, rubrics and the through-line rail live. */
+  --rail: 0rem;
+
+  --sheet: 84rem;
+  --measure: 64ch;
+
+  /*
+   * Motion DNA (MOTION.md). Two tempos, one easing family, zero overshoot — a
+   * press strikes and stops dead; it does not bounce back off the paper.
+   */
+  --strike: cubic-bezier(0.16, 1, 0.3, 1);
+  --draw: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --t-micro: 200ms;
+  --t-strike: 460ms;
+  --t-draw: 880ms;
+
+  /* Live state, written by the motion layer, read by rules and the rail. */
+  --status: var(--ink);
+  /* Shared scroll-velocity source, −1…1. One value drives every reactive thing. */
+  --vel: 0;
+  /* Page scroll progress, 0…1. Drives the margin rail's fill. */
+  --progress: 0;
+}
+
+@media (min-width: 64rem) {
+  :root {
+    --rail: 5.5rem;
+  }
+}
+
+/* ==========================================================================
+   BASE
+   ========================================================================== */
+
+* {
+  min-width: 0;
+}
+
+html {
+  background: var(--paper);
+  scroll-behavior: smooth;
+  /* Deliberately no JS smooth-scroll library. This is a tool you scroll fast to
+     find a due date on, and inertia fights that. Native scroll is the honest
+     choice here and it keeps the pinned chart scenes snappy. */
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: clip;
+}
+
+::selection {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+:focus-visible {
+  outline: 2px solid var(--vermilion);
+  outline-offset: 3px;
+}
+
+/* The stock itself. A very fine tooth, so large paper areas read as printed
+   rather than as a flat fill — one inline data URI, no image request, and it
+   sits under everything at low enough contrast to never touch legibility. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.55;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E");
+}
+
+@media (prefers-color-scheme: dark) {
+  body::before {
+    opacity: 0.28;
+  }
+}
+
+/* ==========================================================================
+   COMPONENTS
+   Everything from here to the motion gates lives in Tailwind's `components`
+   layer, and that is load-bearing rather than tidiness.
+   Unlayered CSS outranks every utility, so `.rubric` written at the top level
+   beat `normal-case`, `.docket` beat `text-[0.625rem]`, and `.field` beat
+   `w-24` — silently, with no error, in every place the markup asked for an
+   override. (The `!important` this file used to need on `.serial` was that bug
+   wearing a workaround.) Inside `@layer components`, utilities win again, which
+   is the whole contract Tailwind markup is written against.
+   ========================================================================== */
+
+@layer components {
+
+/* ---------- Typography ---------- */
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 0.9;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+
+.display--xl {
+  font-size: clamp(3rem, 10vw, 8.5rem);
+}
+.display--lg {
+  font-size: clamp(2.25rem, 6.5vw, 5rem);
+}
+.display--md {
+  font-size: clamp(1.7rem, 3.4vw, 2.7rem);
+  line-height: 0.98;
+}
+.display--sm {
+  font-size: clamp(1.3rem, 2.2vw, 1.65rem);
+  line-height: 1.06;
+  letter-spacing: -0.012em;
+}
+
+/* Instrument Serif's italic is the design element — never a substitute for bold. */
+.display em {
+  font-style: italic;
+}
+
+/* The micro-label. Letterpress caption type: small, tracked wide, uppercase. */
+.rubric {
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+/* Docket type — serials, timestamps, provenance, model names. Never a paragraph. */
+.docket {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
+/* Figures. Tabular everywhere, so columns of numbers align and a counting
+   figure doesn't jitter its own width as it tallies. */
+.fig {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+.fig--xl {
+  font-family: var(--font-display);
+  font-size: clamp(3.25rem, 8vw, 6.5rem);
+  line-height: 0.82;
+  letter-spacing: -0.03em;
+}
+
+.fig--lg {
+  font-family: var(--font-display);
+  font-size: clamp(1.9rem, 3.8vw, 2.9rem);
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+}
+
+.prose {
+  max-width: var(--measure);
+  font-size: 1.0625rem;
+  line-height: 1.72;
+  text-wrap: pretty;
+}
+
+.prose--lead {
+  font-size: clamp(1.1rem, 1.9vw, 1.4rem);
+  line-height: 1.58;
+}
+
+/* The oversized margin serial. Depth without decoration — set *in* the paper. */
+.serial {
+  font-family: var(--font-display);
+  font-size: clamp(2.25rem, 4.5vw, 3.75rem);
+  line-height: 0.8;
+  color: var(--ink);
+  opacity: 0.15;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+/* ---------- Structure ---------- */
+
+.sheet {
+  width: 100%;
+  max-width: var(--sheet);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+  position: relative;
+  z-index: 1;
+}
+
+/* The hanging margin. Everything on a page hangs off one left edge; the column
+   to the left of it carries serials, rubrics and the through-line. */
+.hang {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: clamp(1.25rem, 2.5vw, 2.5rem);
+}
+
+@media (min-width: 64rem) {
+  .hang {
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+  }
+}
+
+/* A full-bleed band on the second stock — used to change the pacing between
+   dense and sparse passages, never for decoration. */
+.band {
+  background: var(--paper-deep);
+  border-block: 1px solid var(--rule);
+}
+
+.rule-h {
+  display: block;
+  width: 100%;
+  height: 1px;
+  border: 0;
+  background: var(--rule);
+  transform-origin: left center;
+}
+
+.rule-h[data-weight="heavy"] {
+  height: 2px;
+  background: var(--ink);
+}
+
+.rule-h[data-weight="status"] {
+  height: 2px;
+  background: var(--status);
+}
+
+/* ---------- Plate registration ----------
+   The signature. Display type prints as two impressions — the ink plate and a
+   ghost of the signal plate behind it. They converge into register on entrance
+   and drift apart again with scroll velocity (MOTION.md → Misregistration
+   Drift), so the whole page leans as one organism. */
+
+.plate {
+  position: relative;
+  display: inline-block;
+  isolation: isolate;
+}
+
+.plate__face {
+  display: block;
+  position: relative;
+}
+
+.plate__ghost {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  color: var(--ghost);
+  pointer-events: none;
+  user-select: none;
+  /* --off is driven by the entrance timeline, --vel by the shared velocity source. */
+  transform: translate3d(
+      calc(var(--off, 0px) + var(--vel) * -9px),
+      calc(var(--off, 0px) * 0.42),
+      0
+    )
+    rotate(calc(var(--vel) * -0.35deg));
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plate__ghost {
+    display: none;
+  }
+}
+
+/* ---------- Marks ----------
+   The status mark. A printed lozenge, not a glowing dot — filled when the
+   second plate is in play, hollow when things are simply fine. */
+.mark {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border: 1px solid var(--status);
+  background: var(--status);
+}
+
+.mark[data-level="calm"] {
+  background: transparent;
+  border-color: var(--ink-faint);
+}
+
+/* A missed item is struck through rather than merely coloured, so the week
+   replay still reads without colour. */
+.mark[data-shape="miss"] {
+  background: transparent;
+  border-color: var(--vermilion);
+  position: relative;
+}
+
+.mark[data-shape="miss"]::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(
+    to bottom right,
+    transparent 44%,
+    var(--vermilion) 44%,
+    var(--vermilion) 56%,
+    transparent 56%
+  );
+}
+
+/* ---------- Controls ----------
+   Letterpress: an inked rule, a label, and pressure on hover. Never a pill,
+   never a fill that appears from nowhere. */
+
+.control {
+  --control-ink: var(--ink);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--control-ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  isolation: isolate;
+  overflow: hidden;
+  text-decoration: none;
+  transition:
+    color var(--t-micro) var(--strike),
+    border-color var(--t-micro) var(--strike);
+}
+
+/* The ink flooding up from the baseline — pressure, not a colour swap. */
+.control::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--control-ink);
+  transform: scaleY(0);
+  transform-origin: bottom center;
+  transition: transform var(--t-strike) var(--strike);
+}
+
+.control:hover:not(:disabled),
+.control:focus-visible {
+  color: var(--paper);
+  border-color: var(--control-ink);
+}
+
+.control:hover:not(:disabled)::before,
+.control:focus-visible::before {
+  transform: scaleY(1);
+}
+
+.control[data-active="true"] {
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+.control[data-active="true"]::before {
+  transform: scaleY(1);
+}
+
+.control:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Inline links. The rule under the word thickens under pressure. */
+.link {
+  color: var(--ink);
+  text-decoration: none;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 100% 1px;
+  transition: background-size var(--t-micro) var(--strike);
+}
+
+.link:hover {
+  background-size: 100% 2px;
+}
+
+/* Form fields sit on a rule, like a filled-in form. No box. */
+.field {
+  width: 100%;
+  padding: 0.4rem 0.1rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  transition: border-color var(--t-micro) var(--strike);
+}
+
+.field:focus {
+  outline: none;
+  border-bottom-color: var(--ink);
+}
+
+.field::placeholder {
+  color: var(--ink-soft);
+  opacity: 0.75;
+}
+
+/* A select has to look like a select. Stripping the native control and giving
+   nothing back left the class picker and the assignment picker looking exactly
+   like text inputs, with no indication they could be opened at all. The chevron
+   is drawn per plate rather than with `currentColor`, because a background
+   image cannot inherit ink. */
+select.field {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 1.25rem;
+  background-repeat: no-repeat;
+  background-position: right 0.15rem center;
+  background-size: 0.5rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%2315120E'/%3E%3C/svg%3E");
+}
+
+/* File inputs: give the native button an inked rule, so it reads as pressable
+   rather than as two words of grey text sitting on a line. */
+.field::file-selector-button {
+  margin-right: 0.6rem;
+  padding: 0.2rem 0.55rem;
+  font-family: var(--font-sans);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  cursor: pointer;
+  transition:
+    color var(--t-micro) var(--strike),
+    background-color var(--t-micro) var(--strike),
+    border-color var(--t-micro) var(--strike);
+}
+
+.field::file-selector-button:hover {
+  color: var(--paper);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+} /* @layer components */
+
+@media (prefers-color-scheme: dark) {
+  select.field {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23F0EBE1'/%3E%3C/svg%3E");
+  }
+}
+
+/* ==========================================================================
+   MOTION — initial states
+   Every hidden state is gated behind `html.js`, which the inline script in the
+   document head sets before first paint. If that script or GSAP never runs, the
+   page is fully readable and nothing is hidden. Not a nicety: content hidden in
+   CSS and revealed only by JS is the single biggest cause of a page that renders
+   blank.
+   ========================================================================== */
+
+/*
+ * Press Strike — type rises into place.
+ *
+ * This used to mask the line with `overflow: hidden` and slide it up from
+ * behind its own rule, which looked better and clipped the heading's right edge
+ * the entire time it was animating — plus permanently, on any heading whose
+ * mask release didn't run, and on the ghost plate every time it drifted. Text
+ * that gets sliced is a worse failure than a plainer entrance is a loss, so the
+ * mask is gone and nothing here can clip anything.
+ */
+html.js [data-strike] > :not(.plate__ghost) {
+  opacity: 0;
+  transform: translateY(0.4em);
+}
+
+/* Kinetic masthead — characters strike individually from behind their line. */
+html.js .strike-line {
+  display: block;
+  overflow: hidden;
+}
+
+/* Rule Draw — every hairline arrives by being drawn from the left. */
+html.js [data-draw] {
+  transform: scaleX(0);
+}
+
+/* Docket Advance — a row is revealed along its own rule. */
+html.js [data-advance] {
+  clip-path: inset(0 100% 0 0);
+}
+
+/* Impression Settle — a figure or block is pressed onto the page. */
+html.js [data-press] {
+  opacity: 0;
+  transform: translateY(0.6rem) scale(1.012);
+}
+
+/* The ghost plate starts out of register and converges. */
+html.js .plate__ghost {
+  --off: 0.9rem;
+}
+
+/*
+ * Reduced motion: the same page, printed rather than pressed.
+ *
+ * These selectors must match the hiding selectors above *character for
+ * character*. A media query adds no specificity, so `html.js [data-strike] > *`
+ * (0,3,0) loses to `html.js [data-strike] > :not(.plate__ghost)` (0,3,1) and the
+ * masked type stays translated out of its own overflow box — every display
+ * heading in the product silently invisible for exactly the users who asked for
+ * less motion. Keep the pairs identical; ties are resolved by source order, and
+ * these come last.
+ */
+@media (prefers-reduced-motion: reduce) {
+  html.js [data-strike] > :not(.plate__ghost),
+  html.js [data-draw],
+  html.js [data-advance],
+  html.js [data-press] {
+    transform: none;
+    opacity: 1;
+    clip-path: none;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* The flashcard answer. A local keyframe rather than one of the reveal
+   patterns: this node is created by the client after the observer layer has
+   already been wired, so it has to animate itself. */
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(0.35rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   THROUGH-LINE
+   A hairline down the hanging margin on every page, filling with scroll
+   progress. It is the one element present the whole way down, which is what
+   stops five pages feeling like five separate products.
+   ========================================================================== */
+
+.throughline {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  /* Out in the gutter, clear of the hanging margin. Sitting it on the content
+     edge put a live rule straight through every rubric in the rail column. */
+  left: calc((100vw - min(100vw, var(--sheet))) / 2 + 1.25rem);
+  width: 1px;
+  background: var(--rule-soft);
+  z-index: 5;
+  pointer-events: none;
+  display: none;
+}
+
+.throughline__fill {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: calc(var(--progress) * 100%);
+  background: var(--status);
+}
+
+.throughline__head {
+  position: absolute;
+  left: -2px;
+  width: 5px;
+  height: 5px;
+  background: var(--status);
+  top: calc(var(--progress) * 100%);
+  transform: translateY(-50%);
+}
+
+@media (min-width: 64rem) {
+  .throughline {
+    display: block;
+  }
+}
+
+/* ==========================================================================
+   SHEET SLIP
+   The page-turn. A sheet of stock slips up over the outgoing route and away
+   from the incoming one, so a navigation never flashes.
+   ========================================================================== */
+
+.slip {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: var(--paper-deep);
+  border-top: 2px solid var(--ink);
+  transform: translateY(100%);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slip {
+    display: none;
+  }
 }

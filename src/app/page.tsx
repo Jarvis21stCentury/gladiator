@@ -1,65 +1,581 @@
-import Image from "next/image";
+import Link from "next/link";
 
-export default function Home() {
+import { togglePlanTask } from "@/app/actions";
+import { AutoSync } from "@/components/AutoSync";
+import { SyncButton } from "@/components/SyncButton";
+import { Docket, DocketRow } from "@/components/press/Docket";
+import { Figure } from "@/components/press/Figure";
+import { Mark } from "@/components/press/Mark";
+import { Meter } from "@/components/press/Meter";
+import { PageHeader, type PageSection } from "@/components/press/PageHeader";
+import { Plate } from "@/components/press/Plate";
+import { PressureChart } from "@/components/press/PressureChart";
+import { Rule } from "@/components/press/Rule";
+import { SectionHead } from "@/components/press/SectionHead";
+import { Verdict } from "@/components/press/Verdict";
+import { getCourseTrends } from "@/lib/analytics/trend";
+import { getDashboardData, type DueItem } from "@/lib/dashboard";
+import { minutesLabel } from "@/lib/format";
+import { getTodaysPlan } from "@/lib/planner/daily-plan";
+import { STATUS_VAR, levelForDueDate } from "@/lib/status";
+import { getSystemState } from "@/lib/system-state";
+
+/**
+ * The front page.
+ *
+ * Composed as a broadsheet, but structured so it can be *used*: a purpose line,
+ * a contents list that jumps, and six numbered sections that each say what they
+ * are before showing it. The earlier version led with a dateline and one
+ * beautiful headline and left you to scroll blind to find out what the page even
+ * contained — which is lovely and useless on a tool you open to check whether
+ * something is due today.
+ */
+
+export const dynamic = "force-dynamic";
+
+/** How stale the data has to be before opening the front page triggers a refresh. */
+const STALE_AFTER_MINUTES = 30;
+
+function DueBlock({
+  heading,
+  items,
+  empty,
+  ink,
+}: {
+  heading: string;
+  items: DueItem[];
+  empty: string;
+  ink?: string;
+}) {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <div className="mt-10 first:mt-0">
+      <p className="rubric mb-3" style={ink ? { color: ink } : undefined}>
+        {heading} — {items.length}
+      </p>
+
+      {items.length === 0 ? (
+        <p className="docket py-2">{empty}</p>
+      ) : (
+        <Docket>
+          {items.map((item) => (
+            <DocketRow
+              key={item.id}
+              title={item.title}
+              meta={item.courseName}
+              dueAt={item.dueAt}
+              trailing={
+                item.pointsPossible !== null ? `${item.pointsPossible} pts` : null
+              }
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+          ))}
+        </Docket>
+      )}
     </div>
+  );
+}
+
+export default async function FrontPage() {
+  const [
+    {
+      dueToday,
+      dueThisWeek,
+      upcoming,
+      overdue,
+      courses,
+      lastCanvasSync,
+      lastCalendarSync,
+    },
+    plan,
+    system,
+    trends,
+  ] = await Promise.all([
+    getDashboardData(),
+    getTodaysPlan(),
+    getSystemState(),
+    getCourseTrends(),
+  ]);
+
+  const onFallback = lastCanvasSync?.mode === "ICAL_FALLBACK";
+  const today = system.forecast.days[0];
+  const dateline = new Date().toLocaleDateString(undefined, {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const planDone = plan?.tasks.filter((task) => task.done).length ?? 0;
+  const hasFlags = system.struggles.length > 0;
+
+  // Built from what's actually on the page — a contents list that offers a
+  // section which isn't rendered is worse than no contents list.
+  const contents: PageSection[] = [
+    { id: "now", label: "Right now" },
+    { id: "workload", label: "Next two weeks" },
+    ...(hasFlags ? [{ id: "flags", label: "Needs attention" }] : []),
+    { id: "plan", label: "Today's plan" },
+    { id: "due", label: "Everything due" },
+    { id: "grades", label: "Grades" },
+  ];
+
+  return (
+    <main className="flex-1">
+      <PageHeader
+        eyebrow={dateline}
+        title="Front page"
+        purpose="What's due, what's slipping, and where the next two weeks get heavy."
+        meta={
+          <p className="rubric flex items-center gap-2.5">
+            <Mark level={system.level} />
+            {system.struggleCount > 0
+              ? `${system.struggleCount} open flag${system.struggleCount === 1 ? "" : "s"}`
+              : "no open flags"}
+          </p>
+        }
+        contents={contents}
+      />
+
+      {/* ===================== 01 · RIGHT NOW ===================== */}
+      <section className="sheet mt-[var(--section)]">
+        <SectionHead
+          id="now"
+          serial="01"
+          rubric="The short answer"
+          title="Right now"
+          description="The system's read on how school is going, and the five numbers behind it."
+          level={system.level}
+        />
+
+        <div className="hang">
+          <span aria-hidden="true" className="hidden lg:block" />
+          <div>
+            <Verdict
+              text={system.headline}
+              level={system.level}
+              className="display--lg max-w-[18ch]"
+            />
+
+            <Rule className="mt-[var(--block)]" />
+
+            <div className="mt-7 grid grid-cols-2 gap-x-8 gap-y-9 sm:grid-cols-3 lg:grid-cols-5">
+              <Figure
+                label="Due today"
+                value={String(dueToday.length)}
+                tally={{ to: dueToday.length }}
+                level={dueToday.length > 0 ? "warming" : undefined}
+                size="lg"
+              />
+              <Figure
+                label="Overdue"
+                value={String(overdue.length)}
+                tally={{ to: overdue.length }}
+                level={overdue.length > 0 ? "urgent" : undefined}
+                size="lg"
+              />
+              <Figure
+                label="Next 4 days"
+                value={minutesLabel(system.nearTermMinutes)}
+                hint={`${Math.round(system.nearTermRatio * 100)}% of your free time`}
+                size="lg"
+              />
+              <Figure
+                label="Today's load"
+                value={minutesLabel(today?.loadMinutes ?? 0)}
+                level={today?.level}
+                hint="work due today"
+                size="lg"
+              />
+              <Figure
+                label="Two weeks"
+                value={minutesLabel(system.forecast.totalMinutes)}
+                hint={`${system.forecast.overloadedDays.length} day${
+                  system.forecast.overloadedDays.length === 1 ? "" : "s"
+                } that won't fit`}
+                size="lg"
+              />
+            </div>
+
+            {onFallback ? (
+              <div
+                className="mt-[var(--block)]"
+                style={{ "--status": STATUS_VAR.warming } as React.CSSProperties}
+              >
+                <Rule weight="status" />
+                <p className="rubric mt-4" style={{ color: STATUS_VAR.warming }}>
+                  Grades are not being collected
+                </p>
+                <p className="prose mt-3 text-[0.95rem]">
+                  This came from the Canvas calendar feed, not the API, so due
+                  dates are current but grades, points and submission status are
+                  missing. Add a Canvas access token as{" "}
+                  <code className="docket">CANVAS_TOKEN</code> to fix it.
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      {/* ===================== 02 · WORKLOAD ===================== */}
+      <section className="mt-[var(--section)]">
+        <div className="sheet">
+          <SectionHead
+            id="workload"
+            serial="02"
+            rubric="Workload forecast"
+            title="The next two weeks"
+            description="Each day's work drawn against the hours you actually have free that day. Where a bar runs past its dashed line, the day doesn't fit."
+            hint="Scroll through the chart to read it day by day."
+            level={system.level}
+            aside={
+              <Link href="/calendar" data-slip="" className="control">
+                See three weeks
+              </Link>
+            }
+          />
+        </div>
+
+        <PressureChart
+          days={system.forecast.days.map((day) => ({
+            date: day.date,
+            offset: day.offset,
+            loadMinutes: day.loadMinutes,
+            capacityMinutes: day.capacityMinutes,
+            level: day.level,
+            itemCount: day.items.length,
+          }))}
+          totalMinutes={system.forecast.totalMinutes}
+        />
+
+        {system.forecast.peak ? (
+          <div className="sheet mt-[var(--block)]">
+            <div className="hang">
+              <span aria-hidden="true" className="hidden lg:block" />
+              <div>
+                <p className="rubric mb-5">The heaviest day ahead</p>
+                <div className="grid gap-x-12 gap-y-8 lg:grid-cols-12">
+                  <div className="lg:col-span-5">
+                    <Plate as="p" className="display display--md">
+                      {system.forecast.peak.date.toLocaleDateString(undefined, {
+                        weekday: "long",
+                        month: "long",
+                        day: "numeric",
+                      })}
+                    </Plate>
+                    <p className="prose mt-4 text-[0.95rem] text-ink-soft">
+                      {minutesLabel(system.forecast.peak.loadMinutes)} of work
+                      against {minutesLabel(system.forecast.peak.capacityMinutes)}{" "}
+                      free. Starting some of it earlier is the only way it fits.
+                    </p>
+                  </div>
+
+                  <div className="lg:col-span-7">
+                    <Docket>
+                      {system.forecast.peak.items.slice(0, 5).map((item) => (
+                        <DocketRow
+                          key={item.assignmentId}
+                          title={item.title}
+                          meta={item.courseName}
+                          dueAt={item.dueAt}
+                          trailing={minutesLabel(item.estimatedMinutes)}
+                        />
+                      ))}
+                    </Docket>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      {/* ===================== 03 · FLAGS ===================== */}
+      {hasFlags ? (
+        <section className="band mt-[var(--section)] py-[var(--section)]">
+          <div className="sheet">
+            <SectionHead
+              id="flags"
+              serial="03"
+              rubric="Struggles engine"
+              title="Needs attention"
+              description="Patterns the app found on its own: work missed in clusters, a grade sliding several checks running, a day that can't fit what's due on it."
+              level={system.level}
+            />
+
+            <div className="hang">
+              <span aria-hidden="true" className="hidden lg:block" />
+              <div className="flex flex-col gap-[var(--block)]">
+                {system.struggles.map((struggle, index) => (
+                  <article
+                    key={struggle.id}
+                    style={
+                      { "--status": STATUS_VAR[struggle.level] } as React.CSSProperties
+                    }
+                  >
+                    <Rule weight="status" />
+                    <div className="mt-5 flex gap-5">
+                      <span className="serial shrink-0 text-[1.75rem] opacity-100">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <div>
+                        <Plate as="h3" className="display display--sm">
+                          {struggle.title}
+                        </Plate>
+                        <p className="prose mt-3">{struggle.description}</p>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {/* ===================== 04 · TODAY'S PLAN ===================== */}
+      <section className="sheet mt-[var(--section)]">
+        <SectionHead
+          id="plan"
+          serial={hasFlags ? "04" : "03"}
+          rubric="Daily plan"
+          title="Today's plan"
+          description="Written each morning from what's due and how long things actually take you."
+          hint={plan ? "Tick items off as you finish them." : undefined}
+          aside={
+            plan ? (
+              <span className="rubric">
+                {planDone} of {plan.tasks.length} done
+              </span>
+            ) : null
+          }
+        />
+
+        <div className="hang">
+          <span aria-hidden="true" className="hidden lg:block" />
+          {plan ? (
+            <div>
+              <p className="prose prose--lead">{plan.generatedSummary}</p>
+
+              <Rule className="my-10" />
+
+              {plan.tasks.length === 0 ? (
+                <p className="docket">No tasks scheduled today.</p>
+              ) : (
+                <Docket as="ol">
+                  {plan.tasks.map((task) => {
+                    const level = task.done
+                      ? "calm"
+                      : levelForDueDate(task.assignment?.dueAt ?? null);
+
+                    return (
+                      <li
+                        key={task.id}
+                        className="flex items-start gap-4 border-b border-rule/70 py-4 last:border-b-0"
+                        data-advance=""
+                        style={{ opacity: task.done ? 0.6 : 1 }}
+                      >
+                        {/* A server action, so the plan stays accurate with no
+                            client-side store. */}
+                        <form action={togglePlanTask} className="shrink-0 pt-[3px]">
+                          <input type="hidden" name="taskId" value={task.id} />
+                          <button
+                            type="submit"
+                            aria-label={
+                              task.done
+                                ? `Reopen ${task.title}`
+                                : `Mark ${task.title} done`
+                            }
+                            className="flex h-[15px] w-[15px] items-center justify-center border transition-colors duration-200"
+                            style={{
+                              borderColor: task.done
+                                ? "var(--ink)"
+                                : "var(--ink-faint)",
+                              background: task.done ? "var(--ink)" : "transparent",
+                              color: "var(--paper)",
+                            }}
+                          >
+                            {task.done ? (
+                              <span className="text-[0.5rem] leading-none">✓</span>
+                            ) : null}
+                          </button>
+                        </form>
+
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className="text-[0.95rem] leading-snug"
+                            style={{
+                              color:
+                                level === "calm" ? undefined : STATUS_VAR[level],
+                              textDecoration: task.done
+                                ? "line-through"
+                                : undefined,
+                            }}
+                          >
+                            {task.title}
+                          </p>
+                          <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
+                            {task.reason}
+                          </p>
+                        </div>
+
+                        <span className="docket shrink-0 pt-1 text-right leading-snug">
+                          {task.estimatedMinutes}m
+                          {task.assignment ? (
+                            <>
+                              <br />
+                              <span className="opacity-65">
+                                {task.assignment.course.name}
+                              </span>
+                            </>
+                          ) : null}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </Docket>
+              )}
+
+              <p className="docket mt-8">
+                Written by {plan.provider}/{plan.model} ·{" "}
+                {plan.updatedAt.toLocaleString()}
+              </p>
+            </div>
+          ) : (
+            <p className="prose text-ink-soft">
+              Nothing yet. The plan is written each morning by the scheduled job,
+              so it appears once that has run for today.
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* ===================== 05 · EVERYTHING DUE ===================== */}
+      <section className="sheet mt-[var(--section)]">
+        <SectionHead
+          id="due"
+          serial={hasFlags ? "05" : "04"}
+          rubric="Manifest"
+          title="Everything due"
+          description="Every assignment you haven't submitted, grouped by how soon it lands."
+          level={overdue.length > 0 ? "urgent" : undefined}
+        />
+
+        <div className="hang">
+          <span aria-hidden="true" className="hidden lg:block" />
+          <div className="grid gap-x-12 gap-y-0 lg:grid-cols-2">
+            <div>
+              {overdue.length > 0 ? (
+                <DueBlock
+                  heading="Overdue"
+                  items={overdue}
+                  empty="Nothing overdue."
+                  ink={STATUS_VAR.urgent}
+                />
+              ) : null}
+              <DueBlock
+                heading="Today"
+                items={dueToday}
+                empty="Nothing due today."
+              />
+            </div>
+
+            <div>
+              <DueBlock
+                heading="Rest of this week"
+                items={dueThisWeek}
+                empty="Nothing else due this week."
+              />
+              <DueBlock
+                heading="Further out"
+                items={upcoming}
+                empty="Nothing further out yet."
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ===================== 06 · GRADES ===================== */}
+      <section className="sheet mt-[var(--section)]">
+        <SectionHead
+          id="grades"
+          serial={hasFlags ? "06" : "05"}
+          rubric="Per class"
+          title="Grades"
+          description="Where each class stands, and how far it has moved in the last few weeks."
+          aside={
+            <Link href="/classes" data-slip="" className="control">
+              Open a class
+            </Link>
+          }
+        />
+
+        <div className="hang">
+          <span aria-hidden="true" className="hidden lg:block" />
+
+          {courses.length === 0 ? (
+            <p className="prose text-ink-soft">
+              No classes yet. Press <strong>Sync Canvas</strong> at the bottom of
+              this page to pull them in.
+            </p>
+          ) : (
+            <div className="grid gap-x-12 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+              {courses.map((course) => {
+                const trend = trends.find((entry) => entry.courseId === course.id);
+
+                return (
+                  <Meter
+                    key={course.id}
+                    percent={onFallback ? null : course.currentGradePercent}
+                    label={course.name}
+                    caption={
+                      onFallback
+                        ? "grades not collected"
+                        : trend && trend.changePercent !== null
+                          ? `${trend.changePercent >= 0 ? "+" : ""}${trend.changePercent.toFixed(1)} pts recently`
+                          : undefined
+                    }
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ===================== DATA SOURCE ===================== */}
+      <section className="sheet mt-[var(--section)]">
+        <Rule />
+        <div className="hang mt-6">
+          <span aria-hidden="true" className="hidden lg:block" />
+          <div>
+            <p className="rubric mb-4">Where this data comes from</p>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+              <SyncButton />
+              <AutoSync
+                lastSyncedAt={lastCanvasSync?.startedAt.toISOString() ?? null}
+                staleAfterMinutes={STALE_AFTER_MINUTES}
+              />
+            </div>
+
+            <p className="docket mt-5 max-w-xl leading-relaxed">
+              {lastCanvasSync
+                ? `Canvas ${lastCanvasSync.status.toLowerCase()} via ${lastCanvasSync.mode} · ${lastCanvasSync.startedAt.toLocaleString()}`
+                : "Canvas never synced"}
+              {" · "}
+              {lastCalendarSync
+                ? `Calendar ${lastCalendarSync.eventsCreated} created / ${lastCalendarSync.eventsUpdated} updated / ${lastCalendarSync.eventsSkipped} left alone`
+                : "Calendar never synced"}
+            </p>
+
+            {lastCanvasSync?.error || lastCalendarSync?.error ? (
+              <p className="docket mt-3" style={{ color: STATUS_VAR.urgent }}>
+                {lastCanvasSync?.error ?? lastCalendarSync?.error}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </section>
+    </main>
   );
 }

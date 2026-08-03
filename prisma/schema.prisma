@@ -1,0 +1,551 @@
+// Gladiator — data model. See ARCHITECTURE.md.
+// Single-user tool: there is deliberately no User model and no accounts table.
+// Phase 1 covers Course / Assignment / GradeSnapshot / CalendarBlock only;
+// DriveFileRef, StruggleFlag, DailyPlan, WeeklyRetro, LessonNote, EffortLog
+// and CollegeItem land with the features that need them.
+//
+// Announcement and SyncRun are additions for Canvas ingestion — see their comments.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+// Prisma 7: no `url` here. The CLI reads DATABASE_URL via prisma.config.ts;
+// the app passes a driver adapter to PrismaClient (see src/lib/prisma.ts).
+datasource db {
+  provider = "postgresql"
+}
+
+model Course {
+  id                  String  @id @default(cuid())
+  canvasId            Int     @unique
+  name                String
+  term                String?
+  currentGradePercent Float?
+
+  assignments     Assignment[]
+  snapshots       GradeSnapshot[]
+  announcements   Announcement[]
+  lessonNotes     LessonNote[]
+  digestSources   DigestSource[]
+  struggleFlags   StruggleFlag[]
+  gradeCategories GradeCategory[]
+  syllabusImports SyllabusImport[]
+  flashcards      Flashcard[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Assignment {
+  id String @id @default(cuid())
+
+  /// Null for rows the syllabus parser created: a test date printed on a
+  /// syllabus has no Canvas object behind it. Postgres allows many NULLs in a
+  /// unique index, so the Canvas upsert-on-id path is unaffected.
+  canvasId       Int?             @unique
+  source         AssignmentSource @default(CANVAS)
+  courseId       String
+  title          String
+  dueAt          DateTime?
+  pointsPossible Float?
+  submitted      Boolean          @default(false)
+  score          Float?
+
+  /// Which weighted bucket this counts toward, when the syllabus told us.
+  /// Null means the what-if calculator falls back to flat point totals.
+  gradeCategoryId String?
+
+  course         Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  gradeCategory  GradeCategory?  @relation(fields: [gradeCategoryId], references: [id], onDelete: SetNull)
+  calendarBlocks CalendarBlock[]
+  planTasks      PlanTask[]
+  effortLogs     EffortLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([courseId])
+  @@index([dueAt])
+  @@index([gradeCategoryId])
+}
+
+enum AssignmentSource {
+  CANVAS
+  SYLLABUS
+  MANUAL
+}
+
+/// One row per course per day — powers grade trend detection.
+model GradeSnapshot {
+  id           String   @id @default(cuid())
+  courseId     String
+  date         DateTime @db.Date
+  gradePercent Float
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([courseId, date])
+  @@index([courseId, date])
+}
+
+model CalendarBlock {
+  id                 String            @id @default(cuid())
+  title              String
+  start              DateTime
+  end                DateTime
+  type               CalendarBlockType
+  googleEventId      String?           @unique
+  linkedAssignmentId String?
+
+  /// Which Google calendar the event lives on ("primary" unless overridden).
+  googleCalendarId String?
+
+  /// True once the event in Google no longer matches what we last wrote — the
+  /// user moved, renamed or otherwise edited it. From that point the sync leaves
+  /// the event completely alone. `start`/`end` above are our last-written values
+  /// and are what this comparison is made against, so they must not be updated
+  /// unless the event was actually written.
+  userModified Boolean @default(false)
+
+  /// The user deleted the event in Google. Recreating it every 30 minutes would
+  /// be its own kind of stomping, so we never do.
+  deletedInGoogle Boolean @default(false)
+
+  lastPushedAt DateTime?
+
+  linkedAssignment Assignment? @relation(fields: [linkedAssignmentId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([start])
+  @@index([linkedAssignmentId])
+}
+
+/// One plan per day. `tasks` is a relation rather than a JSON column so a task can
+/// point at the Assignment it came from and be checked off individually later.
+model DailyPlan {
+  id               String   @id @default(cuid())
+  date             DateTime @unique @db.Date
+  generatedSummary String
+
+  /// Which provider/model wrote it, and what it cost — the spend cap in
+  /// ARCHITECTURE.md needs numbers to work from.
+  provider     String
+  model        String
+  inputTokens  Int?
+  outputTokens Int?
+
+  tasks PlanTask[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PlanTask {
+  id               String  @id @default(cuid())
+  dailyPlanId      String
+  /// Display order — the LLM's prioritisation, preserved.
+  position         Int
+  title            String
+  /// Plain-English reason this sits where it does.
+  reason           String
+  /// Minutes budgeted, from EffortLog history or the default heuristic.
+  estimatedMinutes Int
+  assignmentId     String?
+  done             Boolean @default(false)
+
+  dailyPlan  DailyPlan   @relation(fields: [dailyPlanId], references: [id], onDelete: Cascade)
+  assignment Assignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@unique([dailyPlanId, position])
+  @@index([assignmentId])
+}
+
+/// Actual-vs-estimated time, logged after the fact. Empty until the user starts
+/// logging; the planner falls back to a heuristic until then.
+model EffortLog {
+  id               String  @id @default(cuid())
+  assignmentId     String
+  estimatedMinutes Int?
+  actualMinutes    Int
+  note             String?
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([assignmentId])
+}
+
+/// Raw material for the nightly digest, collected through the day.
+///
+/// Uploads happen whenever the user takes a photo; Canvas content is pulled on
+/// sync; the digest runs at night. The raw text needs somewhere to sit in
+/// between, which is what this is. Not in the ARCHITECTURE.md model list.
+///
+/// The binary of an uploaded page is deliberately NOT stored — text is extracted
+/// on upload and the file discarded. The whole point of the digest is that the
+/// user reads the distilled notes instead of the original pages.
+model DigestSource {
+  id       String           @id @default(cuid())
+  /// The school day this belongs to.
+  date     DateTime         @db.Date
+  courseId String
+  kind     DigestSourceKind
+
+  /// Stable id for Canvas-sourced material, so re-syncing can't double-ingest.
+  /// Null for uploads, which are always new.
+  externalId String? @unique
+
+  /// Human label — "Unit 3 › Cell Transport" or "biology-p204.jpg".
+  label String
+
+  /// Extracted plain text handed to the model.
+  rawText String
+
+  /// False for the baseline snapshot taken the first time a course's modules are
+  /// read: everything already in Canvas on day one isn't "covered in class
+  /// today", and folding it in would produce one enormous meaningless digest.
+  includeInDigest Boolean @default(true)
+
+  /// Set once this material has been folded into a note.
+  lessonNoteId String?
+
+  course     Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessonNote LessonNote? @relation(fields: [lessonNoteId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([courseId, date])
+  @@index([lessonNoteId])
+}
+
+/// The distilled per-class notes for one day — what the user actually reads.
+/// `keyPoints` is the shared surface the flashcard generator will read from
+/// later (FEATURES.md), so keep each entry self-contained enough to become a card.
+model LessonNote {
+  id               String               @id @default(cuid())
+  date             DateTime             @db.Date
+  courseId         String
+  sourceType       LessonNoteSourceType
+  /// What this was built from — labels of the contributing sources.
+  rawInputRef      String?
+  keyPoints        String[]
+  generatedSummary String
+
+  provider     String
+  model        String
+  inputTokens  Int?
+  outputTokens Int?
+
+  course     Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  sources    DigestSource[]
+  flashcards Flashcard[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One note per class per day; regenerating replaces it.
+  @@unique([courseId, date])
+  @@index([date])
+}
+
+enum DigestSourceKind {
+  CANVAS_MODULE_ITEM
+  CANVAS_ANNOUNCEMENT
+  TEXTBOOK_IMAGE
+  TEXTBOOK_PDF
+}
+
+enum LessonNoteSourceType {
+  CANVAS
+  TEXTBOOK
+  MIXED
+}
+
+/// Canvas announcements. Not in the ARCHITECTURE.md model list, but the sync job
+/// pulls announcements and they need somewhere to land.
+model Announcement {
+  id       String    @id @default(cuid())
+  canvasId Int       @unique
+  courseId String
+  title    String
+  message  String?
+  postedAt DateTime?
+  url      String?
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([courseId, postedAt])
+}
+
+/// One row per sync attempt. Drives "last synced" and, more importantly, tells the
+/// UI whether the data on screen came from the full API or the grade-less iCal
+/// fallback — that distinction has to be visible, not inferred.
+model SyncRun {
+  id         String     @id @default(cuid())
+  mode       SyncMode
+  status     SyncStatus
+  startedAt  DateTime   @default(now())
+  finishedAt DateTime?
+
+  coursesSynced       Int @default(0)
+  assignmentsSynced   Int @default(0)
+  announcementsSynced Int @default(0)
+
+  // Google Calendar push. "Skipped" counts events left alone because the user
+  // had edited or deleted them — that number should be visible, not silent.
+  eventsCreated Int @default(0)
+  eventsUpdated Int @default(0)
+  eventsSkipped Int @default(0)
+
+  error String?
+
+  @@index([startedAt])
+}
+
+enum SyncMode {
+  CANVAS_API
+  ICAL_FALLBACK
+  GOOGLE_CALENDAR
+}
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+enum CalendarBlockType {
+  ASSIGNMENT
+  TEST
+  PROJECT
+  STUDY
+  PERSONAL
+}
+
+/// A detected pattern worth the user's attention (FEATURES.md, Tier 2).
+///
+/// Detection is deterministic — rules over due dates, submission status and
+/// grade history — and runs with no API key. The LLM only rewrites `description`
+/// into plain English; when it is unavailable a templated sentence is used
+/// instead, which is why `explainedBy` records which one produced the text.
+///
+/// The front page's verdict reads `severity` (1 watch → 2 warning → 3 critical,
+/// the plain-ink/ochre/vermilion ladder in CLAUDE.md), so this model has to exist
+/// before that headline means anything.
+model StruggleFlag {
+  id       String       @id @default(cuid())
+  type     StruggleType
+  courseId String?
+
+  /// 1 = watch (plain ink), 2 = warning (ochre), 3 = critical (vermilion).
+  severity Int
+
+  title       String
+  description String
+
+  /// The facts the rule fired on, kept so a flag can be explained without
+  /// re-deriving it and so the LLM rewrite has something concrete to work from.
+  evidence String[]
+
+  /// Identifies the underlying condition, not the occurrence. Re-running
+  /// detection updates the existing row instead of stacking duplicates every
+  /// time the cron fires.
+  signature String @unique
+
+  /// "llm" or "rules" — whether the prose came from the model or the fallback.
+  explainedBy String @default("rules")
+
+  detectedAt DateTime  @default(now())
+  /// Last detection run that still saw this condition. A flag not seen by the
+  /// current run has cleared itself and is auto-resolved.
+  lastSeenAt DateTime  @default(now())
+  resolved   Boolean   @default(false)
+  resolvedAt DateTime?
+
+  course Course? @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([resolved, severity])
+  @@index([courseId])
+}
+
+enum StruggleType {
+  /// Several assignments missed in a short window.
+  MISSED_CLUSTER
+  /// Grade down on two consecutive snapshots.
+  GRADE_SLIDE
+  /// A class that has stopped receiving submissions while others continue.
+  SUBMISSION_SILENCE
+  /// More work landing in a few days than there are hours to do it.
+  WORKLOAD_SPIKE
+  /// Overdue work accumulating rather than being cleared.
+  OVERDUE_PILEUP
+}
+
+/// The Sunday debrief (FEATURES.md, Tier 2). One per week, keyed on the Monday.
+model WeeklyRetro {
+  id        String   @id @default(cuid())
+  weekStart DateTime @unique @db.Date
+
+  summaryText String
+  wins        String[]
+  struggles   String[]
+  /// Concrete changes to make next week — the "what to adjust" third of the spec.
+  adjustments String[]
+
+  /// Counted facts the summary was written from, so the page can show the
+  /// numbers next to the prose rather than asking the reader to trust it.
+  assignmentsCompleted Int @default(0)
+  assignmentsMissed    Int @default(0)
+  minutesLogged        Int @default(0)
+
+  provider     String
+  model        String
+  inputTokens  Int?
+  outputTokens Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// A weighted grading bucket ("Tests — 40%"), normally extracted from a syllabus.
+/// Without these the what-if calculator can only work in flat points.
+model GradeCategory {
+  id            String              @id @default(cuid())
+  courseId      String
+  name          String
+  weightPercent Float
+  source        GradeCategorySource @default(SYLLABUS)
+
+  course      Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  assignments Assignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([courseId, name])
+  @@index([courseId])
+}
+
+enum GradeCategorySource {
+  SYLLABUS
+  MANUAL
+}
+
+/// One syllabus parse. Kept as an audit trail: the parser writes Assignments and
+/// GradeCategories directly, and without this there would be no record of where
+/// those rows came from or when a re-parse last ran.
+model SyllabusImport {
+  id       String @id @default(cuid())
+  courseId String
+  fileName String
+
+  datesFound      Int @default(0)
+  categoriesFound Int @default(0)
+
+  /// Anything the model flagged as ambiguous — dates without a year, a weighting
+  /// table that does not add to 100.
+  warnings String[]
+
+  provider String
+  model    String
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([courseId, createdAt])
+}
+
+/// A review card for one class (FEATURES.md Tier 3, auto-flashcards).
+///
+/// Cards are written from the same `LessonNote.keyPoints` the nightly digest
+/// already produces. That is deliberate rather than convenient: the digest spec
+/// calls the key points "the shared surface the flashcard generator will read
+/// from", so a card is a key point turned into a question, not a second
+/// extraction pass over the same material at a second API cost.
+model Flashcard {
+  id       String @id @default(cuid())
+  courseId String
+
+  /// Which night's notes this came from. Nulled if that note is deleted — the
+  /// card is still valid, it just loses its provenance link.
+  lessonNoteId String?
+
+  front String
+  back  String
+  /// Where in the material the answer came from, shown under the back.
+  hint String?
+
+  /// Identifies the *idea* — the key point it was written from — not the row.
+  /// Regenerating rewrites a card in place instead of stacking a second deck
+  /// on every run, the same trick `StruggleFlag.signature` uses.
+  signature String @unique
+
+  // --- SM-2 scheduling state -------------------------------------------
+  /// When this card next comes up. New cards are due immediately.
+  dueAt DateTime @default(now())
+  /// Days until the next review, after the last successful one.
+  intervalDays Int @default(0)
+  /// SM-2 ease. Starts at 2.5 and drifts down on cards you keep failing.
+  easeFactor Float @default(2.5)
+  /// Consecutive successful reviews. Reset to 0 by a lapse.
+  repetitions Int @default(0)
+  /// Times this card has been forgotten *after* being learned.
+  lapses Int @default(0)
+
+  lastReviewedAt DateTime?
+
+  /// Parked by hand: kept and searchable, never scheduled.
+  suspended Boolean @default(false)
+
+  provider String
+  model    String
+
+  course     Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessonNote LessonNote?       @relation(fields: [lessonNoteId], references: [id], onDelete: SetNull)
+  reviews    FlashcardReview[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The review queue's only query: this class's cards, soonest due first.
+  @@index([courseId, dueAt])
+  @@index([lessonNoteId])
+}
+
+/// One answered card.
+///
+/// Kept so the weekly retro can report how much review actually happened, and
+/// so a scheduling decision can be explained afterwards — `intervalDays` is what
+/// the scheduler chose at the time, not what it would choose now.
+model FlashcardReview {
+  id          String @id @default(cuid())
+  flashcardId String
+
+  /// 1 again · 2 hard · 3 good · 4 easy. The ladder the review screen shows.
+  rating Int
+  /// The interval this review produced, in days.
+  intervalDays Int
+  /// Time spent on the card before answering.
+  elapsedMs Int?
+
+  flashcard Flashcard @relation(fields: [flashcardId], references: [id], onDelete: Cascade)
+
+  reviewedAt DateTime @default(now())
+
+  @@index([flashcardId])
+  @@index([reviewedAt])
+}

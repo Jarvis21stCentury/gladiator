@@ -1,0 +1,214 @@
+import "server-only";
+
+import type {
+  CanvasAnnouncement,
+  CanvasAssignment,
+  CanvasCourse,
+  CanvasModule,
+  CanvasPage,
+} from "./types";
+
+/** Token is missing, revoked, or the account has personal tokens disabled. */
+export class CanvasAuthError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = "CanvasAuthError";
+  }
+}
+
+export class CanvasApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "CanvasApiError";
+  }
+}
+
+/** Pull the rel="next" URL out of a Canvas `Link` header. */
+function parseNextLink(header: string | null): string | null {
+  if (!header) return null;
+
+  for (const part of header.split(",")) {
+    const match = part.match(/<([^>]+)>\s*;\s*rel="([^"]+)"/);
+    if (match && match[2] === "next") return match[1];
+  }
+
+  return null;
+}
+
+export interface CanvasClientOptions {
+  baseUrl: string;
+  token: string;
+  /** Guards against a pagination bug walking the API forever. */
+  maxPages?: number;
+}
+
+export class CanvasClient {
+  private readonly baseUrl: string;
+  private readonly token: string;
+  private readonly maxPages: number;
+
+  constructor({ baseUrl, token, maxPages = 50 }: CanvasClientOptions) {
+    if (!token) {
+      throw new CanvasAuthError("CANVAS_TOKEN is not set.");
+    }
+
+    // Accept "school.instructure.com", with or without scheme or trailing slash.
+    const trimmed = baseUrl.trim().replace(/\/+$/, "");
+    this.baseUrl = /^https?:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+    this.token = token;
+    this.maxPages = maxPages;
+  }
+
+  private async request(url: string): Promise<Response> {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        Accept: "application/json",
+      },
+      // Sync results are written to Postgres; never serve these from a cache.
+      cache: "no-store",
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      throw new CanvasAuthError(
+        `Canvas rejected the access token (HTTP ${response.status}). The token may be revoked, or personal access tokens may be disabled for this account.`,
+        response.status,
+      );
+    }
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new CanvasApiError(
+        `Canvas API ${response.status} for ${url}${body ? `: ${body.slice(0, 300)}` : ""}`,
+        response.status,
+      );
+    }
+
+    return response;
+  }
+
+  /** GET a paginated collection, following `Link: rel="next"` to the end. */
+  private async getAll<T>(
+    path: string,
+    params: Record<string, string | string[]> = {},
+  ): Promise<T[]> {
+    const url = new URL(`${this.baseUrl}/api/v1${path}`);
+    url.searchParams.set("per_page", "100");
+
+    for (const [key, value] of Object.entries(params)) {
+      if (Array.isArray(value)) {
+        for (const item of value) url.searchParams.append(key, item);
+      } else {
+        url.searchParams.set(key, value);
+      }
+    }
+
+    const results: T[] = [];
+    let next: string | null = url.toString();
+    let pages = 0;
+
+    while (next && pages < this.maxPages) {
+      const response: Response = await this.request(next);
+      const page: unknown = await response.json();
+
+      if (!Array.isArray(page)) {
+        throw new CanvasApiError(
+          `Expected an array from ${next}, got ${typeof page}.`,
+          response.status,
+        );
+      }
+
+      results.push(...(page as T[]));
+      next = parseNextLink(response.headers.get("link"));
+      pages += 1;
+    }
+
+    return results;
+  }
+
+  /**
+   * Active courses for the current user, with the current grade attached.
+   * `total_scores` is what puts `computed_current_score` on the enrollment.
+   */
+  async getCourses(): Promise<CanvasCourse[]> {
+    const courses = await this.getAll<CanvasCourse>("/courses", {
+      enrollment_state: "active",
+      "include[]": ["total_scores", "term"],
+    });
+
+    // Concluded/restricted courses come back as stubs with no usable name.
+    return courses.filter(
+      (course) => !course.access_restricted_by_date && Boolean(course.name),
+    );
+  }
+
+  async getAssignments(courseId: number): Promise<CanvasAssignment[]> {
+    return this.getAll<CanvasAssignment>(`/courses/${courseId}/assignments`, {
+      "include[]": ["submission"],
+      order_by: "due_at",
+    });
+  }
+
+  /**
+   * Announcements are fetched across all courses in one call — the endpoint takes
+   * repeated `context_codes[]`, so this is one request instead of N.
+   */
+  async getAnnouncements(courseIds: number[]): Promise<CanvasAnnouncement[]> {
+    if (courseIds.length === 0) return [];
+
+    // Canvas defaults to the last 14 days; ask for a wider window explicitly.
+    const start = new Date();
+    start.setDate(start.getDate() - 90);
+
+    return this.getAll<CanvasAnnouncement>("/announcements", {
+      "context_codes[]": courseIds.map((id) => `course_${id}`),
+      start_date: start.toISOString(),
+      end_date: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Course modules with their items — the "what was covered in class" surface
+   * the nightly digest reads. Item bodies are not included; fetch Page bodies
+   * separately with `getPage`.
+   */
+  async getModules(courseId: number): Promise<CanvasModule[]> {
+    const modules = await this.getAll<CanvasModule>(
+      `/courses/${courseId}/modules`,
+      { "include[]": ["items"] },
+    );
+
+    // Unpublished modules aren't visible to the student yet.
+    return modules.filter((module) => module.published !== false);
+  }
+
+  /**
+   * A wiki page's body. Returns null when the page is missing or restricted —
+   * one unreadable page shouldn't fail a whole course's digest.
+   */
+  async getPage(courseId: number, pageUrl: string): Promise<CanvasPage | null> {
+    try {
+      const response = await this.request(
+        `${this.baseUrl}/api/v1/courses/${courseId}/pages/${encodeURIComponent(pageUrl)}`,
+      );
+
+      return (await response.json()) as CanvasPage;
+    } catch (error) {
+      // A revoked token still has to stop the run; a missing or locked page
+      // does not (`request` throws on any non-2xx).
+      if (error instanceof CanvasAuthError) throw error;
+      return null;
+    }
+  }
+
+  /** Cheap round-trip to check the token before running a full sync. */
+  async verifyToken(): Promise<void> {
+    await this.request(`${this.baseUrl}/api/v1/users/self`);
+  }
+}
