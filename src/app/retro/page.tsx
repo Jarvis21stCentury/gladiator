@@ -62,7 +62,6 @@ function Findings({
         <li
           key={item}
           className="flex gap-4 border-b border-rule/70 py-3.5 last:border-b-0"
-          data-advance=""
           style={{ "--status": ink ?? STATUS_VAR[level] } as React.CSSProperties}
         >
           <span className="mt-2">
@@ -270,7 +269,6 @@ export default async function WeeklyRetroPage({
                       <li
                         key={move.courseName}
                         className="flex items-baseline justify-between gap-6 border-b border-rule/70 py-2.5 last:border-b-0"
-                        data-advance=""
                       >
                         <span className="text-[0.95rem]">{move.courseName}</span>
                         <span

@@ -127,6 +127,36 @@ export async function getAmbientLevel(): Promise<StatusLevel> {
   return worst ? levelFromSeverity(worst.severity) : "calm";
 }
 
+/**
+ * What the shell's sidebar needs, in one round trip.
+ *
+ * This runs on *every* page, so it is deliberately three cheap indexed queries
+ * and nothing derived: the class list with its colours, and the count of work
+ * that is genuinely late. Anything heavier here would be paid for on the digest
+ * and the retro, which do not otherwise touch assignments at all.
+ */
+export async function getShellData(): Promise<{
+  level: StatusLevel;
+  overdue: number;
+  courses: { id: string; name: string }[];
+}> {
+  const [level, overdue, courses] = await Promise.all([
+    getAmbientLevel(),
+    prisma.assignment.count({
+      where: {
+        submitted: false,
+        dueAt: { lt: new Date() },
+      },
+    }),
+    prisma.course.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+
+  return { level, overdue, courses };
+}
+
 export async function getSystemState(): Promise<
   SystemState & { forecast: WorkloadForecast; struggles: ActiveStruggle[] }
 > {

@@ -144,8 +144,8 @@ export function TextbookUpload({ courses, date }: TextbookUploadProps) {
           className="border-l-2 pl-4"
           style={{
             borderColor: outcome.ok
-              ? "var(--moss)"
-              : "var(--vermilion)",
+              ? "var(--jade)"
+              : "var(--flare)",
           }}
         >
           <p className="text-sm">
@@ -154,7 +154,7 @@ export function TextbookUpload({ courses, date }: TextbookUploadProps) {
               : `Couldn't add that: ${outcome.message}`}
           </p>
           {outcome.warnings?.map((warning) => (
-            <p key={warning} className="mt-1 text-xs text-ochre">
+            <p key={warning} className="mt-1 text-xs text-amber">
               {warning}
             </p>
           ))}

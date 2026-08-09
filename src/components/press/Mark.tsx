@@ -22,7 +22,7 @@ export function Mark({
    * Explicit ink, for the cases the ladder does not cover — `AFFIRM_VAR` on the
    * retro's wins, which are positive rather than "warming". Without this the
    * mark always re-derived its own ink from `level` and quietly overrode
-   * whatever the caller had set on the row, so every win printed ochre.
+   * whatever the caller had set on the row, so every win printed amber.
    */
   ink?: string;
 }) {

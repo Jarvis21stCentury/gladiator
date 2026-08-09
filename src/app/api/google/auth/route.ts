@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * environment. Nothing here runs during normal operation.
  */
 export async function GET() {
-  const config = getGoogleConfig();
+  const config = await getGoogleConfig();
 
   if (!hasOAuthClient(config)) {
     return NextResponse.json(

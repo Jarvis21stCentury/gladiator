@@ -57,6 +57,15 @@ model Assignment {
   /// Null means the what-if calculator falls back to flat point totals.
   gradeCategoryId String?
 
+  /// How hard *this student* thinks this is, 1 (trivial) to 5 (brutal).
+  ///
+  /// Set by hand, and deliberately separate from points: a 10-point problem set
+  /// on a topic you have not understood is a bigger evening than a 100-point
+  /// worksheet you could do asleep, and Canvas has no idea which is which. Null
+  /// means never rated, which is not the same as "average" — an unrated item is
+  /// estimated exactly as it was before, rather than being nudged toward 3.
+  difficulty Int?
+
   course         Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
   gradeCategory  GradeCategory?  @relation(fields: [gradeCategoryId], references: [id], onDelete: SetNull)
   calendarBlocks CalendarBlock[]
@@ -146,16 +155,104 @@ model DailyPlan {
   updatedAt DateTime @updatedAt
 }
 
+/// What a week normally looks like: sleep, school, practice, a shift at work.
+///
+/// Before this, "free time" was a fixed clock range from an env var — 16:00 to
+/// 21:30 for everyone, every day. That is wrong for almost every student: you
+/// get home at 16:45 on a Monday, have practice until 18:00 on Tuesdays and
+/// Thursdays, work Saturday mornings, and sleep at 22:30 on a school night.
+/// A planner that does not know any of that produces a schedule you cannot
+/// follow, and a schedule you cannot follow is one you stop opening.
+///
+/// One row per day per block, so "practice Tue and Thu" is two rows. That is
+/// deliberately dumber than a recurrence rule: a student changes one day's
+/// practice time far more often than they add a genuinely repeating pattern,
+/// and editing a single row is obvious in a way that editing a rule is not.
+///
+/// Times are minutes past local midnight, not `DateTime`. A routine is a
+/// *clock* fact — "practice ends at six" — and storing it as a timestamp on some
+/// arbitrary date invites exactly the timezone bugs that make an app tell you to
+/// start work at 3am.
+model RoutineBlock {
+  id String @id @default(cuid())
+
+  /// 0 = Sunday, matching JavaScript's `Date.getDay()`.
+  dayOfWeek Int
+  kind      RoutineKind @default(ACTIVITY)
+  label     String
+
+  /// Minutes past local midnight.
+  startMinutes Int
+  endMinutes   Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dayOfWeek])
+}
+
+enum RoutineKind {
+  /// Bounds the day rather than sitting inside it: nothing is ever scheduled
+  /// before you wake or after you go to bed.
+  SLEEP
+  /// School hours, and anything else compulsory that fills a block of the day.
+  SCHOOL
+  /// Clubs, sport, a job, a commute — busy, but yours.
+  ACTIVITY
+  /// Deliberately protected time. Busy for the planner, and the point is that
+  /// it stays that way.
+  PERSONAL
+}
+
+/// Small key/value store for things a student configures in the app itself.
+///
+/// Credentials used to be env-only, which is fine for a developer and useless
+/// for a student: connecting Canvas meant editing a file and restarting the
+/// server. Values set here take precedence over the matching env var, so an
+/// existing deployment keeps working untouched and the UI can override it.
+///
+/// Secrets live here in plaintext. That is not a regression — the env vars they
+/// replace were plaintext too, and this app has no user table and no login by
+/// design — but it does mean the database is now credential-bearing. Anything
+/// stored under a key ending in `_TOKEN` is never sent to the browser; see
+/// `lib/canvas/config.ts`.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+/// What a block on the day's schedule actually is.
+///
+/// Breaks and meals are rows here rather than a separate table because they are
+/// part of the same ordered sequence: the whole point of the schedule is that
+/// 5:00–5:50 work, 5:50–6:00 break and 6:00–6:45 dinner are one list you read
+/// top to bottom, not a task list with furniture layered over it.
+enum PlanBlockKind {
+  WORK
+  BREAK
+  MEAL
+}
+
 model PlanTask {
-  id               String  @id @default(cuid())
+  id               String        @id @default(cuid())
   dailyPlanId      String
   /// Display order — the LLM's prioritisation, preserved.
   position         Int
+  kind             PlanBlockKind @default(WORK)
   title            String
   /// Plain-English reason this sits where it does.
   reason           String
   /// Minutes budgeted, from EffortLog history or the default heuristic.
+  /// For a BREAK or MEAL this is simply the block's length.
   estimatedMinutes Int
+
+  /// Clock times, assigned by the deterministic layout pass in
+  /// `lib/planner/schedule.ts` — never by the model. Nullable because plans
+  /// generated before scheduling existed have an order but no times.
+  startAt DateTime?
+  endAt   DateTime?
+
   assignmentId     String?
   done             Boolean @default(false)
 

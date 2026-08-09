@@ -11,22 +11,29 @@ import { STATUS_VAR, type StatusLevel } from "@/lib/status";
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 /**
- * Waterline Flood — the signature scene (MOTION.md).
+ * The workload chart.
  *
  * The one thing this product knows that a calendar does not is *how much of the
- * time you actually have is already spoken for*. So that is the biggest thing on
- * the site, and it is the only place the page takes the scroll away from you.
+ * time you actually have is already spoken for*. Each day hangs down from the top
+ * rule; its length is the work due. Across each column is a tick at the hours
+ * that day actually has free — its waterline. The part of a column that punches
+ * past its own waterline is the part that does not fit, and it prints in the
+ * urgent ink. Nothing about that needs a legend.
  *
- * Each day hangs down from the top rule; its length is the work due. Across each
- * column is a tick at the hours that day actually has free — its waterline. The
- * part of a column that punches past its own waterline is the part that does not
- * fit, and it prints in vermilion. Nothing about that needs a legend.
+ * ## It used to pin the page, and no longer does
  *
- * Choreography: the section pins, and one scrubbed value sweeps a read head left
- * to right. Columns strike down as the head reaches them, the overload segment
- * floods a beat later, and the margin readout re-prints to whichever day the head
- * is over. One source of truth driving four things is what makes it read as a
- * single instrument rather than four animations that happen to share a section.
+ * This was the site's signature scene: the section pinned, took the scroll away
+ * for 130% of a viewport, and a scrubbed read head swept left to right while
+ * columns struck down and overload segments flooded behind it. It was the best
+ * thing in the editorial version of this design.
+ *
+ * It is wrong for a tool, and it was the last thing left fighting the person
+ * using one. Scroll-jacking a full viewport to reveal fourteen bars costs you a
+ * screen and a half of scrolling to learn something a 320px chart shows
+ * instantly — and this is a page opened to answer "is this week bad", not a
+ * page to be walked through. So the columns now animate in on entry like every
+ * other reveal in the product, the chart is a fixed height inside the content
+ * column, and the readout reports today rather than tracking a scroll position.
  */
 
 export interface PressureDay {
@@ -46,7 +53,6 @@ export function PressureChart({
   totalMinutes: number;
 }) {
   const root = useRef<HTMLDivElement>(null);
-  const headRef = useRef<HTMLSpanElement>(null);
   const dateRef = useRef<HTMLSpanElement>(null);
   const loadRef = useRef<HTMLSpanElement>(null);
   const noteRef = useRef<HTMLSpanElement>(null);
@@ -79,11 +85,16 @@ export function PressureChart({
       const columns = gsap.utils.toArray<HTMLElement>("[data-column]", el);
       const floods = gsap.utils.toArray<HTMLElement>("[data-flood]", el);
 
-      const write = (progress: number) => {
-        const index = Math.min(
-          days.length - 1,
-          Math.max(0, Math.round(progress * (days.length - 1))),
-        );
+      /*
+       * Repoint the readout at a day.
+       *
+       * This used to be driven by the pinned scene's scrub — the readout tracked
+       * whatever the scroll had swept the read head over. With the pin gone it is
+       * driven by pointing at a column instead, which is the same information on
+       * demand rather than as a function of how far you have scrolled, and it is
+       * what someone actually wants: "what is that tall red one".
+       */
+      const write = (index: number) => {
         const day = days[index];
         if (!day) return;
 
@@ -98,7 +109,7 @@ export function PressureChart({
           loadRef.current.textContent = minutesLabel(day.loadMinutes);
           loadRef.current.style.color =
             day.loadMinutes > day.capacityMinutes
-              ? "var(--vermilion)"
+              ? "var(--flare)"
               : "var(--ink)";
         }
         if (noteRef.current) {
@@ -111,81 +122,88 @@ export function PressureChart({
         }
       };
 
+      /*
+       * Hover-to-read. Delegated from the chart root rather than bound per
+       * column, so there is one listener regardless of how many days are shown,
+       * and it survives the columns being re-rendered.
+       *
+       * Pointer events only: this is an enhancement over a readout that already
+       * shows today, so a keyboard or touch user loses nothing. Wiring it up as
+       * real focusable controls would put fourteen tab stops in front of the
+       * rest of the page to restate numbers the timetable lists in full.
+       */
+      const onPoint = (event: PointerEvent) => {
+        const cell = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+          "[data-day]",
+        );
+        if (!cell) return;
+
+        const index = Number(cell.dataset.day);
+        if (Number.isInteger(index)) write(index);
+      };
+
+      const onLeave = () => write(0);
+
+      el.addEventListener("pointermove", onPoint);
+      el.addEventListener("pointerleave", onLeave);
+
       const media = gsap.matchMedia();
 
       media.add(
-        {
-          motion: "(prefers-reduced-motion: no-preference)",
-          wide: "(min-width: 48rem)",
-        },
+        // `wide` used to gate the pin, which was only ever applied above 48rem.
+        // With no pin there is nothing width-dependent left to decide.
+        { motion: "(prefers-reduced-motion: no-preference)" },
         (context) => {
-          const { motion, wide } = context.conditions as {
-            motion: boolean;
-            wide: boolean;
-          };
+          const { motion } = context.conditions as { motion: boolean };
 
           if (!motion) {
             // Reduced motion: the chart is simply printed, complete, no pin,
             // and the readout keeps the server's reading of today — which is
             // the useful static answer, and already on screen.
             gsap.set([columns, floods], { scaleY: 1 });
-            gsap.set(headRef.current, { xPercent: 0, autoAlpha: 0 });
             return;
           }
 
           gsap.set(columns, { scaleY: 0 });
           gsap.set(floods, { scaleY: 0 });
 
-          // Pin below the nameplate, not under it. Measured rather than
-          // hard-coded, because the masthead's height is set by its own type.
-          const masthead = () =>
-            Math.round(
-              document
-                .querySelector("[data-masthead]")
-                ?.getBoundingClientRect().height ?? 0,
-            );
-
           const timeline = gsap.timeline({
             scrollTrigger: {
               trigger: el,
-              start: () => `top top+=${masthead()}`,
-              end: "+=130%",
-              // Pinning is worth it here and nowhere else on the site: the whole
-              // point is watching three weeks assemble against their waterlines.
-              pin: wide,
-              anticipatePin: 1,
-              scrub: 0.6,
-              invalidateOnRefresh: true,
-              onUpdate: (self) => write(self.progress),
+              // Fires once, when the chart is properly on screen. No pin, no
+              // scrub, no scroll taken from the reader.
+              start: "top 85%",
+              once: true,
             },
           });
 
-          // Webfonts land after this scene is built and shift everything above
-          // it, which would leave the pin starting in the wrong place.
-          document.fonts?.ready.then(() => ScrollTrigger.refresh()).catch(() => {});
-
           timeline
-            .to(headRef.current, { xPercent: 100 * days.length, ease: "none" }, 0)
-            .to(
-              columns,
-              { scaleY: 1, ease: "power3.out", stagger: { each: 0.6 / days.length } },
-              0,
-            )
+            .to(columns, {
+              scaleY: 1,
+              duration: 0.5,
+              ease: "power3.out",
+              stagger: { each: 0.022 },
+            })
             .to(
               floods,
               {
                 scaleY: 1,
+                duration: 0.45,
                 ease: "power2.out",
                 // A beat behind its own column: the work lands, *then* you see
                 // the part of it that does not fit.
-                stagger: { each: 0.6 / days.length },
+                stagger: { each: 0.022 },
               },
-              0.06,
+              0.1,
             );
         },
       );
 
-      return () => media.revert();
+      return () => {
+        el.removeEventListener("pointermove", onPoint);
+        el.removeEventListener("pointerleave", onLeave);
+        media.revert();
+      };
     },
     { scope: root, dependencies: [days] },
   );
@@ -235,33 +253,23 @@ export function PressureChart({
              which puts its own width past the right edge and would otherwise
              widen the document and give the whole page a horizontal scrollbar. */
           className="relative flex items-stretch overflow-hidden"
-          /* Sized so the pinned scene fills the screen it has taken over.
-             A pinned section with a third of the viewport left empty under it
+          /* A chart, not a scene. Tall enough to compare fourteen columns and
+             their waterlines by eye, short enough that the section under it is
+             visible at the same time.
+             (Formerly sized to fill a pinned viewport; a section with a third
+             of the screen left empty under it
              reads as a bug rather than as a held moment. */
-          style={{ height: "clamp(240px, 60vh, 620px)" }}
+          style={{ height: "clamp(200px, 30vh, 300px)" }}
         >
-          {/* The read head — what the margin readout is currently reporting.
-              Solid and marked at the top rather than a faint dashed hairline:
-              at 50% ink it disappeared against the day dividers, which left the
-              readout looking like it was describing nothing in particular. */}
-          <span
-            ref={headRef}
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 left-0 z-10"
-            style={{ width: `${100 / days.length}%` }}
-          >
-            <span className="absolute inset-y-0 left-0 w-px bg-ink" />
-            <span className="absolute -left-[3px] top-0 h-[7px] w-[7px] bg-ink" />
-          </span>
-
-          {days.map((day) => {
+          {days.map((day, index) => {
             const fits = Math.min(day.loadMinutes, day.capacityMinutes);
             const over = Math.max(0, day.loadMinutes - day.capacityMinutes);
 
             return (
               <div
                 key={day.offset}
-                className="relative min-w-0 flex-1 border-r border-rule/50 last:border-r-0"
+                data-day={index}
+                className="relative min-w-0 flex-1 border-r border-rule/50 transition-colors duration-150 last:border-r-0 hover:bg-accent-soft"
               >
                 {/* The waterline: how much of this day is actually free. */}
                 <span
@@ -311,7 +319,8 @@ export function PressureChart({
         <div className="border-t border-ink/70">
           <div className="sheet flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2 py-4">
             <p className="rubric">
-              column = work due · dashed = hours free that day · vermilion = over
+              column = work due · dashed = hours free · red = over · point at a
+              day to read it
             </p>
             <p className="docket">
               {minutesLabel(totalMinutes)} across {days.length} days

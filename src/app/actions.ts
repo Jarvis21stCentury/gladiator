@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { schedule, type Rating } from "@/lib/flashcards/schedule";
 import { prisma } from "@/lib/prisma";
+import { parseClock } from "@/lib/routine/model";
 
 /**
  * The two write paths the UI owns directly. Everything else that writes goes
@@ -86,17 +87,212 @@ export async function logEffort(
   };
 }
 
-/** Check a task off today's plan. */
+/* ==========================================================================
+   YOUR OWN TASKS
+
+   Work a student adds themselves — revision, a reading, a college essay, the
+   half of school Canvas never hears about.
+
+   These are `Assignment` rows with `source: MANUAL`, not a separate table, and
+   that is the entire design. Every list, the two-week workload forecast, the
+   timetable and the daily planner already read `Assignment`, so a task added
+   here appears in all of them without one line of code changing. A parallel
+   `Task` model would have meant merging two sources in about a dozen places and
+   getting it subtly wrong in one of them.
+
+   It is safe because the Canvas sync only ever *upserts by `canvasId`* and never
+   deletes: a row with a null `canvasId` is invisible to it. The syllabus parser
+   already relies on the same property.
+
+   Two rules the actions below enforce:
+
+     1. Only MANUAL rows can be completed or deleted here. A Canvas assignment's
+        `submitted` flag is owned by Canvas — ticking it locally would silently
+        flip back on the next sync, which is worse than not offering it.
+     2. A task must have a due date. Everything in this product is time and
+        pressure; the queries that build every list filter on `dueAt`, so a task
+        without one would save successfully and then be invisible.
+   ========================================================================== */
+
+/** Long enough for a real task title, short enough to stay one line in a row. */
+const MAX_TITLE = 160;
+
+export async function createTask(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const title = String(formData.get("title") ?? "").trim();
+  const courseId = String(formData.get("courseId") ?? "");
+  const date = String(formData.get("dueDate") ?? "").trim();
+  const time = String(formData.get("dueTime") ?? "").trim();
+
+  if (!title) return { ok: false, message: "Give the task a name." };
+
+  if (title.length > MAX_TITLE) {
+    return { ok: false, message: `Keep the name under ${MAX_TITLE} characters.` };
+  }
+
+  if (!courseId) return { ok: false, message: "Pick a class." };
+  if (!date) return { ok: false, message: "Pick a due date." };
+
+  /*
+   * Built from the parts rather than parsed from a string: `new Date("2026-08-05")`
+   * is treated as UTC midnight, which lands on the *previous* day for anyone
+   * west of Greenwich — a task due Friday would file itself under Thursday.
+   * Reading the fields into a local-time constructor keeps the date the one the
+   * person picked.
+   */
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = (time || "23:59").split(":").map(Number);
+
+  if (!year || !month || !day) {
+    return { ok: false, message: "That due date isn't a real date." };
+  }
+
+  // Defaults to 11:59 PM, matching what Canvas assignments almost always use,
+  // so a hand-added task sorts alongside them instead of jumping to the top.
+  const dueAt = new Date(year, month - 1, day, hour ?? 23, minute ?? 59);
+
+  if (Number.isNaN(dueAt.getTime())) {
+    return { ok: false, message: "That due date isn't a real date." };
+  }
+
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: { id: true, name: true },
+  });
+
+  if (!course) return { ok: false, message: "That class no longer exists." };
+
+  await prisma.assignment.create({
+    data: {
+      title,
+      courseId: course.id,
+      dueAt,
+      source: "MANUAL",
+      // Deliberately null. Manual tasks are work, not graded points, and the
+      // what-if calculator filters on `pointsPossible > 0` — so leaving this
+      // unset is what keeps your own to-dos out of your grade projection.
+      pointsPossible: null,
+    },
+  });
+
+  // It lands in the due lists, the forecast and the timetable at once.
+  revalidatePath("/");
+  revalidatePath("/calendar");
+  revalidatePath("/classes");
+
+  return { ok: true, message: `Added "${title}" to ${course.name}.` };
+}
+
+/** Tick your own task off, or put it back. */
+export async function toggleTaskDone(formData: FormData): Promise<void> {
+  const id = String(formData.get("taskId") ?? "");
+  if (!id) return;
+
+  const task = await prisma.assignment.findUnique({
+    where: { id },
+    select: { id: true, submitted: true, source: true },
+  });
+
+  // Canvas owns `submitted` on its own rows: the next sync would overwrite this.
+  if (!task || task.source !== "MANUAL") return;
+
+  await prisma.assignment.update({
+    where: { id: task.id },
+    data: { submitted: !task.submitted },
+  });
+
+  revalidatePath("/");
+  revalidatePath("/calendar");
+  revalidatePath("/classes");
+}
+
+/** Delete a task you added. */
+export async function deleteTask(formData: FormData): Promise<void> {
+  const id = String(formData.get("taskId") ?? "");
+  if (!id) return;
+
+  const task = await prisma.assignment.findUnique({
+    where: { id },
+    select: { id: true, source: true },
+  });
+
+  // Deleting a Canvas row would only make it reappear on the next sync.
+  if (!task || task.source !== "MANUAL") return;
+
+  // Safe: the schema cascades effort logs and nulls the assignment link on
+  // plan tasks and calendar blocks, so nothing is orphaned.
+  await prisma.assignment.delete({ where: { id: task.id } });
+
+  revalidatePath("/");
+  revalidatePath("/calendar");
+  revalidatePath("/classes");
+}
+
+/**
+ * Rate how hard an assignment is, 1–5, or clear the rating.
+ *
+ * This is the only signal in the product for the thing Canvas cannot see: a
+ * 10-point problem set on a topic you have not understood is a bigger evening
+ * than a 100-point worksheet you could do asleep. It feeds effort estimation,
+ * which feeds the workload forecast and the daily schedule — so one tap here
+ * changes how much of your evening the planner sets aside for it.
+ *
+ * Allowed on Canvas assignments as well as your own tasks: it is *your* opinion
+ * of the work, not a property of the row, and nothing on the Canvas side is
+ * touched by it, so a sync cannot overwrite it.
+ */
+export async function setAssignmentDifficulty(
+  formData: FormData,
+): Promise<void> {
+  const id = String(formData.get("assignmentId") ?? "");
+  if (!id) return;
+
+  const raw = String(formData.get("difficulty") ?? "").trim();
+  // An empty value clears the rating. That is distinct from rating something
+  // "normal": unrated means "estimate this the way you always did".
+  const difficulty = raw === "" ? null : Number(raw);
+
+  if (
+    difficulty !== null &&
+    (!Number.isInteger(difficulty) || difficulty < 1 || difficulty > 5)
+  ) {
+    return;
+  }
+
+  const assignment = await prisma.assignment.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+
+  if (!assignment) return;
+
+  await prisma.assignment.update({
+    where: { id: assignment.id },
+    data: { difficulty },
+  });
+
+  // Every estimate downstream just moved: the forecast, the class dossier and
+  // tomorrow's schedule all price this assignment differently now.
+  revalidatePath("/");
+  revalidatePath("/classes");
+  revalidatePath("/calendar");
+}
+
+/** Check a work block off today's schedule. */
 export async function togglePlanTask(formData: FormData): Promise<void> {
   const taskId = String(formData.get("taskId") ?? "");
   if (!taskId) return;
 
   const task = await prisma.planTask.findUnique({
     where: { id: taskId },
-    select: { id: true, done: true },
+    select: { id: true, done: true, kind: true },
   });
 
-  if (!task) return;
+  // Breaks and dinner are rows in the schedule, not things you complete. The UI
+  // does not render a control for them; this is the guard behind that.
+  if (!task || task.kind !== "WORK") return;
 
   await prisma.planTask.update({
     where: { id: task.id },
@@ -162,4 +358,140 @@ export async function gradeFlashcard(
   revalidatePath("/classes");
 
   return { ok: true, intervalDays: next.intervalDays };
+}
+
+/* ==========================================================================
+   THE WEEKLY ROUTINE
+
+   When you wake, when school ends, when practice runs, when you go to bed.
+   This is what turns "free time" from a guess into a fact — see
+   `lib/routine/model.ts` for why it is stored as clock minutes rather than
+   timestamps, and how sleep bounds a day rather than sitting inside it.
+   ========================================================================== */
+
+/** Add one block, optionally repeated across several days at once. */
+export async function addRoutineBlock(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const label = String(formData.get("label") ?? "").trim();
+  const kind = String(formData.get("kind") ?? "ACTIVITY");
+  const start = parseClock(String(formData.get("start") ?? ""));
+  const end = parseClock(String(formData.get("end") ?? ""));
+
+  // Checkboxes named `days`, so one submission can cover Tue *and* Thu — which
+  // is how practice actually works, and typing it twice is how a setup screen
+  // gets abandoned halfway through.
+  const days = formData
+    .getAll("days")
+    .map((value) => Number(value))
+    .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
+
+  if (!label) return { ok: false, message: "Give it a name." };
+  if (start === null || end === null) {
+    return { ok: false, message: "Use times like 15:40." };
+  }
+  if (days.length === 0) return { ok: false, message: "Pick at least one day." };
+
+  const validKind =
+    kind === "SLEEP" || kind === "SCHOOL" || kind === "PERSONAL"
+      ? kind
+      : "ACTIVITY";
+
+  /*
+   * Sleep is the one kind where start and end are allowed to look backwards:
+   * bedtime 22:30, wake 07:00. Everything else must run forwards within a day,
+   * or the free-time walk silently loses the rest of the evening.
+   */
+  if (validKind !== "SLEEP" && end <= start) {
+    return { ok: false, message: "The end has to be after the start." };
+  }
+
+  await prisma.$transaction(
+    days.map((dayOfWeek) =>
+      prisma.routineBlock.create({
+        data: {
+          dayOfWeek,
+          kind: validKind,
+          label,
+          startMinutes: start,
+          endMinutes: end,
+        },
+      }),
+    ),
+  );
+
+  revalidateRoutine();
+
+  return {
+    ok: true,
+    message: `Added "${label}" on ${days.length} day${days.length === 1 ? "" : "s"}.`,
+  };
+}
+
+export async function deleteRoutineBlock(formData: FormData): Promise<void> {
+  const id = String(formData.get("blockId") ?? "");
+  if (!id) return;
+
+  await prisma.routineBlock.deleteMany({ where: { id } });
+  revalidateRoutine();
+}
+
+/**
+ * A believable school week, in one press.
+ *
+ * An empty routine screen asks a tired student to enter thirty-five values
+ * before the app is any use, which is exactly where people give up. This fills
+ * in the shape almost everyone has — wake, school, sleep, a later weekend — and
+ * leaves them editing something rather than authoring it.
+ */
+export async function seedTypicalWeek(): Promise<void> {
+  const existing = await prisma.routineBlock.count();
+  if (existing > 0) return;
+
+  const weekdays = [1, 2, 3, 4, 5];
+  const weekend = [0, 6];
+
+  await prisma.$transaction([
+    ...weekdays.flatMap((dayOfWeek) => [
+      prisma.routineBlock.create({
+        data: {
+          dayOfWeek,
+          kind: "SLEEP" as const,
+          label: "Sleep",
+          startMinutes: 22 * 60 + 30,
+          endMinutes: 7 * 60,
+        },
+      }),
+      prisma.routineBlock.create({
+        data: {
+          dayOfWeek,
+          kind: "SCHOOL" as const,
+          label: "School",
+          startMinutes: 8 * 60 + 15,
+          endMinutes: 15 * 60 + 20,
+        },
+      }),
+    ]),
+    ...weekend.map((dayOfWeek) =>
+      prisma.routineBlock.create({
+        data: {
+          dayOfWeek,
+          kind: "SLEEP" as const,
+          label: "Sleep",
+          startMinutes: 23 * 60 + 30,
+          endMinutes: 9 * 60,
+        },
+      }),
+    ),
+  ]);
+
+  revalidateRoutine();
+}
+
+/** The routine changes every free-time figure in the product. */
+function revalidateRoutine(): void {
+  revalidatePath("/routine");
+  revalidatePath("/");
+  revalidatePath("/calendar");
 }

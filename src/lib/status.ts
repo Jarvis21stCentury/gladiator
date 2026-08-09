@@ -13,11 +13,15 @@
 /**
  * calm → warming → urgent.
  *
- * In the almanac's ink language `calm` is *plain ink* — no second plate. A page
- * where nothing is wrong prints in one colour, and the signal inks (ochre, then
- * vermilion) only appear where attention is genuinely due. Moss exists for the
+ * In the notebook's ink language `calm` is *plain navy* — no signal ink at
+ * all. A page where nothing is wrong is one colour, and the signal inks (amber,
+ * then flare) only appear where attention is genuinely due. Jade exists for the
  * affirmative case (closed, submitted, improving) and is asked for explicitly,
  * not derived from a level.
+ *
+ * The accent is not on this ladder and never will be. It is the direction
+ * colour — where you are, what you are about to press — and giving it a status
+ * meaning as well would make both meanings useless.
  */
 export type StatusLevel = "calm" | "warming" | "urgent";
 
@@ -30,12 +34,12 @@ const LEVEL_RANK: Record<StatusLevel, number> = {
 /** CSS custom property per level. Never hard-code a hex at a call site. */
 export const STATUS_VAR: Record<StatusLevel, string> = {
   calm: "var(--ink)",
-  warming: "var(--ochre)",
-  urgent: "var(--vermilion)",
+  warming: "var(--amber)",
+  urgent: "var(--flare)",
 };
 
 /** The affirmative ink. Not on the ladder — asked for by name where it applies. */
-export const AFFIRM_VAR = "var(--moss)";
+export const AFFIRM_VAR = "var(--jade)";
 
 export const STATUS_LABEL: Record<StatusLevel, string> = {
   calm: "on track",

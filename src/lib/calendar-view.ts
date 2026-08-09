@@ -42,6 +42,8 @@ export interface DayDetail {
     submitted: boolean;
     pointsPossible: number | null;
     level: StatusLevel;
+    /** The student's own 1–5 rating, so the day view can set it too. */
+    difficulty: number | null;
   }[];
   level: StatusLevel;
 }
@@ -102,6 +104,7 @@ export async function getDayDetail(date: Date): Promise<DayDetail> {
     submitted: assignment.submitted,
     pointsPossible: assignment.pointsPossible,
     level: levelForDueDate(assignment.dueAt, { submitted: assignment.submitted }),
+    difficulty: assignment.difficulty,
   }));
 
   const forecastDay =

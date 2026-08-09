@@ -223,7 +223,7 @@ async function syncViaIcal(
  * on the SyncRun so the dashboard can say so out loud.
  */
 export async function runCanvasSync(): Promise<SyncResult> {
-  const config = getCanvasConfig();
+  const config = await getCanvasConfig();
   const warnings: string[] = [];
 
   if (!hasApiCredentials(config) && !config.icalUrl) {

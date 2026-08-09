@@ -6,7 +6,7 @@ import { useEffect, useRef } from "react";
  * Tally (MOTION.md).
  *
  * Figures arrive by counting to their value, not by sliding into place. This is
- * an almanac: the number is the content, and watching it settle is what makes a
+ * this product: the number is the content, and watching it settle is what makes a
  * page of statistics feel like a reading being taken rather than a layout being
  * populated.
  *

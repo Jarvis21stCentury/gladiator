@@ -3,11 +3,15 @@ import { STATUS_VAR, type StatusLevel } from "@/lib/status";
 import { Tally } from "./Tally";
 
 /**
- * A reading: rubric above, figure below, note underneath.
+ * A metric tile: label, number, note.
  *
- * The almanac's core unit. The label is set small and tracked wide so the figure
- * can be as large as it wants without the pair reading as two competing pieces
- * of type — a caption and its subject, not a heading and a value.
+ * Now an actual surface rather than three lines of type floating on the page.
+ * That is the whole difference between "five numbers somewhere on a page" and a
+ * KPI strip you read in one pass — the reference pattern is four to six of these
+ * above the fold, each with one number and nothing competing with it.
+ *
+ * The figure is deliberately capped at 2rem. It used to run to 4.75rem, which
+ * made five of them the entire first screen.
  */
 export function Figure({
   label,
@@ -31,15 +35,17 @@ export function Figure({
   const inked = level && level !== "calm";
 
   return (
-    <div className={className} data-press="">
-      <p className="rubric">{label}</p>
+    <div className={`tile ${className}`} data-press="">
+      <p className="rubric truncate">{label}</p>
       <p
-        className={`mt-2 ${size === "lg" ? "fig--lg" : "display display--sm fig"}`}
+        className={`mt-1.5 fig ${size === "lg" ? "fig--lg" : "display display--md"}`}
         style={inked ? { color: STATUS_VAR[level] } : undefined}
       >
         {tally ? <Tally {...tally} /> : value}
       </p>
-      {hint ? <p className="docket mt-1.5">{hint}</p> : null}
+      {hint ? (
+        <p className="mt-1 text-[0.75rem] leading-snug text-ink-soft">{hint}</p>
+      ) : null}
     </div>
   );
 }

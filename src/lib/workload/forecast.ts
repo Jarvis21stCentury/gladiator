@@ -2,6 +2,8 @@ import "server-only";
 
 import { createEstimator } from "@/lib/effort/estimate";
 import { prisma } from "@/lib/prisma";
+import { freeMinutes, resolveDay, type RoutineBlockRecord } from "@/lib/routine/model";
+import { getRoutine } from "@/lib/routine/routine";
 import { levelForLoad, type StatusLevel } from "@/lib/status";
 
 /**
@@ -75,9 +77,22 @@ function addDays(date: Date, days: number): Date {
   return next;
 }
 
-function baseCapacity(date: Date): number {
-  const day = date.getDay();
-  return day === 0 || day === 6 ? WEEKEND_CAPACITY : WEEKDAY_CAPACITY;
+/**
+ * How much time a given date actually offers, before coursework.
+ *
+ * The routine is the real answer — it knows this student wakes at seven, has
+ * school until 15:20, practice on Tuesdays and a shift on Saturday mornings.
+ * The flat weekday/weekend constants below are only the fallback for someone
+ * who has not set one up, and they are exactly the kind of guess that made the
+ * old pressure chart describe a week nobody was actually having.
+ */
+function baseCapacity(date: Date, routine: RoutineBlockRecord[]): number {
+  const day = resolveDay(routine, date.getDay());
+  if (day.configured) return freeMinutes(day);
+
+  return date.getDay() === 0 || date.getDay() === 6
+    ? WEEKEND_CAPACITY
+    : WEEKDAY_CAPACITY;
 }
 
 export async function getWorkloadForecast(
@@ -88,7 +103,8 @@ export async function getWorkloadForecast(
   const today = startOfDay(from);
   const horizon = addDays(today, dayCount);
 
-  const [assignments, blocks, estimator] = await Promise.all([
+  const [routine, assignments, blocks, estimator] = await Promise.all([
+    getRoutine(),
     prisma.assignment.findMany({
       where: {
         submitted: false,
@@ -118,7 +134,7 @@ export async function getWorkloadForecast(
       offset,
       items: [],
       loadMinutes: 0,
-      capacityMinutes: baseCapacity(date),
+      capacityMinutes: baseCapacity(date, routine),
       loadRatio: 0,
       level: "calm" as StatusLevel,
       intensity: 0,
@@ -148,6 +164,13 @@ export async function getWorkloadForecast(
     days[index].loadMinutes += minutes;
   }
 
+  /*
+   * Calendar events come off on top of the routine.
+   *
+   * The routine is what happens every week; the calendar is what happens *this*
+   * week. Subtracting both is right — a dentist appointment on Thursday is time
+   * the routine does not know about.
+   */
   for (const block of blocks) {
     const index = indexOf(block.start);
     if (index < 0 || index >= days.length) continue;

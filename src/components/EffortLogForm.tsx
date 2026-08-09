@@ -94,8 +94,8 @@ export function EffortLogForm({
           className="text-sm"
           style={{
             color: state.ok
-              ? "var(--moss)"
-              : "var(--vermilion)",
+              ? "var(--jade)"
+              : "var(--flare)",
           }}
         >
           {state.message}

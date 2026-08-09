@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getGoogleConfig, type GoogleConfig } from "./config";
+import type { GoogleConfig } from "./config";
 import { GoogleAuthError, getAccessToken } from "./oauth";
 
 export interface GoogleEventTime {
@@ -55,6 +55,31 @@ export const MANAGED_BY_KEY = "schoolOsManaged";
 export const MANAGED_BY_VALUE = "assignment-due";
 export const ASSIGNMENT_ID_KEY = "schoolOsAssignmentId";
 
+/**
+ * Reminders on a due-date event, set once when it is created.
+ *
+ * This is the whole reason connecting a calendar is worth doing: the app has no
+ * notification system of its own and does not want one — the calendar already
+ * open on the student's phone does that job properly, on the lock screen,
+ * without this app running.
+ *
+ * The evening before and two hours before, rather than Google's default ten
+ * minutes. A ten-minute warning on a deadline is an obituary; the useful alert
+ * for schoolwork is the one that arrives while there is still time to do
+ * something about it.
+ *
+ * Only ever sent on **create**. Updates use PATCH without this field, so a
+ * student who changes or silences the reminders on an event keeps their change
+ * through every subsequent sync.
+ */
+const DUE_DATE_REMINDERS = {
+  useDefault: false,
+  overrides: [
+    { method: "popup", minutes: 12 * 60 },
+    { method: "popup", minutes: 2 * 60 },
+  ],
+};
+
 function toEventBody(input: GoogleEventInput) {
   return {
     summary: input.summary,
@@ -70,7 +95,7 @@ function toEventBody(input: GoogleEventInput) {
 export class GoogleCalendarClient {
   private readonly config: GoogleConfig;
 
-  constructor(config: GoogleConfig = getGoogleConfig()) {
+  constructor(config: GoogleConfig) {
     this.config = config;
   }
 
@@ -176,7 +201,8 @@ export class GoogleCalendarClient {
   async createEvent(input: GoogleEventInput): Promise<GoogleEvent> {
     const response = await this.request(this.eventPath(), {
       method: "POST",
-      body: JSON.stringify(toEventBody(input)),
+      // Reminders only on create — see DUE_DATE_REMINDERS.
+      body: JSON.stringify({ ...toEventBody(input), reminders: DUE_DATE_REMINDERS }),
     });
 
     if (!response.ok) {

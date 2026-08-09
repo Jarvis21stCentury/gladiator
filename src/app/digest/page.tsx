@@ -18,7 +18,7 @@ import { STATUS_VAR } from "@/lib/status";
  * This and the retro are the two pages that get *read* rather than scanned, and
  * CLAUDE.md's rules bite hardest here: body copy in the body face, a plain
  * readable measure, and nothing that gets between the reader and the words at
- * 11pm. So the almanac's instrument furniture is dropped entirely — no figures,
+ * 11pm. So the workbook's instrument furniture is dropped entirely — no figures,
  * no meters, no charts — and the page keeps only the two devices it shares with
  * everything else: rules, and the hanging margin.
  *
@@ -188,7 +188,6 @@ export default async function NightlyDigestPage({
                         <li
                           key={`${note.id}-${index}`}
                           className="flex gap-5 border-b border-rule/70 py-4 last:border-b-0"
-                          data-advance=""
                         >
                           <span className="docket shrink-0 pt-1.5">
                             {serial(index + 1)}
@@ -261,7 +260,6 @@ export default async function NightlyDigestPage({
                 <li
                   key={source.id}
                   className="flex flex-wrap items-baseline gap-x-4 border-b border-rule/70 py-3 last:border-b-0"
-                  data-advance=""
                 >
                   <span className="text-[0.95rem]">{source.course.name}</span>
                   <span className="rubric">

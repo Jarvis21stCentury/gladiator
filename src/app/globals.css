@@ -1,91 +1,130 @@
 @import "tailwindcss";
 
 /*
- * Gladiator — the Almanac.
+ * Gladiator — a school tool.
  *
- * Design system: CLAUDE.md. Motion language and the named prompt catalogue: MOTION.md.
- * This file implements both. Read them before adding anything here.
+ * Design system: CLAUDE.md. Motion language: MOTION.md. This file implements both.
+ * Read them before adding anything here.
  *
- * The organising idea is a *printed almanac* — a two-ink broadsheet of the semester.
- * Everything in this product is time and pressure (due dates, minutes of work, minutes
- * available, the shape of the next three weeks), and a timetable is what that data has
- * always wanted to be. So: warm uncoated paper, one structural ink, a small set of
- * signal inks used only where attention is genuinely due, and structure carried by
- * typographic rules and a hanging margin rather than by boxes.
+ * This is an *application*, and that sentence is the whole design system. Three
+ * previous versions of this file were editorial print systems — a broadsheet almanac,
+ * a marked-up workbook, a ruled notebook — and all three produced something that looked
+ * like a well-designed magazine article *about* a school tool rather than a school tool.
+ * The palettes were never the problem; the skeleton was. Rules-and-a-hanging-margin,
+ * a figure as hero, one headline per screen and a 5rem gap between sections are magazine
+ * decisions, and they cost the reader the only thing they came for: seeing the week.
  *
- * Three rules do most of the work:
- *   1. The rule is the structure. Hairlines and the margin column build every page.
- *      No cards, no radius, no shadow, no fill that isn't carrying meaning.
- *   2. Ink means something. Plain ink is the calm state — the second plate only appears
- *      where the data is warming or urgent. A page that is fine should look like a page
- *      that is fine.
- *   3. The figure is the hero. This is an almanac: the number gets the space, set huge
- *      and tabular, and the prose explains it underneath.
+ * So the shape is now the shape every tool people actually like has — a persistent
+ * sidebar, content grouped onto surfaces, and enough density that a page answers your
+ * question without scrolling.
+ *
+ * Four rules do most of the work:
+ *   1. Group before you decorate. Related things sit on one surface with a hairline
+ *      border. Whitespace alone does not group; it just separates.
+ *   2. Ink means something. Plain navy is the calm state — a signal ink only appears
+ *      where the data is warming or urgent. A page that is fine should be one colour.
+ *   3. Two colour systems, two slots, never crossed. *Course colour* says which class
+ *      and only ever appears as a bar or a dot at a row's left edge. *Status ink* says
+ *      how urgent and only ever appears as text or a mark. They can never be confused
+ *      because they never occupy the same place.
+ *   4. Density with discipline. 4px base unit, small type, tight rows. The measure of
+ *      this design is how much of your week fits on one screen.
  */
 
 /* ==========================================================================
-   PLATES
-   Two printings of the same design. The light plate is the primary — the dark
-   one is its negative, for reading the nightly digest at 11pm. Every colour in
-   the product resolves through these structural tokens plus three inks, so
-   inverting the plate is one block of CSS rather than a second theme.
+   THE PAGE
+   One printing, light only. There is deliberately no dark mode: this is a tool
+   used to wake up to a workload and decide what to do about it, and a bright
+   page is a meaningful part of that. A dark plate would also have to re-tune
+   every one of these inks — the whole palette is built for dark type on white
+   paper, which is the condition every contrast figure below was measured in.
    ========================================================================== */
 
 :root {
+  /* Light only, and stated rather than left to the browser — this also stops the
+     UA giving form controls and scrollbars a dark treatment on a dark OS. */
   color-scheme: light;
 
-  /* Stock. Warm and uncoated — a white page is a screenshot, not a print. */
-  --paper: #f2ede3;
-  --paper-deep: #e8e1d3;
-  --paper-lift: #f7f3ec;
+  /* Stock. Notebook white — the barest warmth off pure #FFF so a full screen of
+     it doesn't glare, but bright enough to keep the page alert. */
+  --paper: #fcfcfa;
+  /* The second stock reads faintly blue rather than darker, so a band changes
+     the pacing without dimming the page. */
+  --paper-deep: #f1f3f7;
+  --paper-lift: #ffffff;
 
-  /* Ink. Warm near-black; #000 on paper reads as a PDF, not a press. */
-  --ink: #15120e;
-  --ink-soft: #6b6458;
-  /* Was #A49C8C, which measured 2.33:1 on paper — under the 3:1 floor for the
-     marks and waterlines it draws, and well under 4.5:1 for the small figures
-     that were using it. Structural hairlines stay on --rule; this is for things
-     that must actually be read. */
-  --ink-faint: #8b8271;
+  /* Ink. Navy-black, the colour of a good pen. Warmer near-blacks read archival
+     and #000 reads as a PDF; this reads as something written today. */
+  --ink: #16233a;
+  --ink-soft: #5a6b85;
+  /* Anything set in this has to actually be readable — it draws small figures
+     and mark outlines, so it holds 4.6:1 on paper. Structural hairlines that
+     nobody reads live on --rule instead, which is free to be much lighter. */
+  --ink-faint: #66748b;
 
-  /* Rules. The entire structural vocabulary of the layout. */
-  --rule: #cbc2b0;
-  --rule-soft: #ded7c8;
+  /* Rules. The entire structural vocabulary of the layout, tinted to the ink so
+     the page's lines and its writing look like they came from one pen. */
+  --rule: #c9d2e0;
+  --rule-soft: #e3e8ef;
+
+  /*
+   * The accent — the ruled line of the notebook, and the only colour in the
+   * system that carries no data. It says *where you are* and *what to press*:
+   * the current section, the page's own title rule, the primary control, the
+   * text you selected. Never a status, never a fill for its own sake.
+   */
+  --accent: #2b57c4;
+  --accent-ink: #ffffff; /* label colour on top of a filled accent */
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
 
   /*
    * The signal inks — a heat ramp plus one affirmative. `calm` deliberately has
    * no ink of its own at structural sites: see --status below.
+   *
+   * All four of these, plus every ink above, were measured against both stocks
+   * (worst case --paper-deep) and clear 4.5:1. Re-measure before changing one:
+   * amber is the fragile one, since a yellow bright enough to feel like a
+   * warning is usually too light to read.
    */
-  --moss: #3c6a53; /* affirmative — closed, submitted, on track */
-  --ochre: #a86e18; /* warming — building up, due soon */
-  --vermilion: #c62f14; /* urgent — overdue, flagged, overloaded */
+  --jade: #1d7a4d; /* affirmative — closed, submitted, on track */
+  /* A true burnt orange. #A15A00 was a muddy yellow-brown that read as "old"
+     rather than as "warning" — at verdict size it looked like a mistake, and the
+     middle of a heat ramp has to be visibly between the other two. This is both
+     more orange *and* higher contrast. */
+  --amber: #c2410c; /* warming — building up, due soon */
+  --flare: #c42b2b; /* urgent — overdue, flagged, overloaded */
 
-  /* Ghost plate — the misregistered second impression behind display type. */
-  --ghost: color-mix(in srgb, var(--vermilion) 30%, transparent);
-}
+  /*
+   * Course colours — "which class", and nothing else.
+   *
+   * Every student tool worth using colour-codes subjects, and it is not
+   * decoration: it is the fastest way to answer "is this mine to worry about
+   * right now", and it measurably lowers the cost of scanning a list.
+   *
+   * Two hard constraints shaped this set:
+   *   1. No red, no amber, no green. Those three belong to the status ladder,
+   *      and a Biology row that happens to print green must never be mistaken
+   *      for a submitted one.
+   *   2. Course colour only ever appears as a *bar or a dot at a row's left
+   *      edge* — never as text. Status ink only ever appears as *text or a
+   *      mark*. Two systems, two slots, impossible to confuse.
+   *
+   * Assigned deterministically from the course name in lib/courses/color.ts, so
+   * a class is the same colour on every page and across reloads.
+   */
+  --course-1: #3b5bdb; /* indigo */
+  --course-2: #0b7285; /* teal */
+  --course-3: #7048e8; /* violet */
+  --course-4: #ae3ec9; /* plum */
+  --course-5: #1098ad; /* cyan */
+  --course-6: #c2255c; /* pink */
+  --course-7: #0c8599; /* deep cyan */
+  --course-8: #4263eb; /* blue */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-
-    --paper: #12100d;
-    --paper-deep: #1a1712;
-    --paper-lift: #1e1a15;
-
-    --ink: #f0ebe1;
-    --ink-soft: #948c7e;
-    --ink-faint: #7a7263;
-
-    --rule: #342f27;
-    --rule-soft: #241f1a;
-
-    /* Lifted for the negative plate — the same inks would go muddy on black. */
-    --moss: #7cb193;
-    --ochre: #dda246;
-    --vermilion: #ef6a4c;
-
-    --ghost: color-mix(in srgb, var(--vermilion) 38%, transparent);
-  }
+  /* The ruled ground. Deliberately near-invisible — it should register as
+     tidiness, never as a grid you can count or read against. */
+  --grid: color-mix(in srgb, var(--rule) 42%, transparent);
+  --grid-size: 2rem;
 }
 
 /* Tailwind sees the semantic tokens, not the raw hexes, so utilities invert too.
@@ -100,16 +139,20 @@
   --color-ink-faint: var(--ink-faint);
   --color-rule: var(--rule);
   --color-rule-soft: var(--rule-soft);
-  --color-moss: var(--moss);
-  --color-ochre: var(--ochre);
-  --color-vermilion: var(--vermilion);
+  --color-jade: var(--jade);
+  --color-amber: var(--amber);
+  --color-flare: var(--flare);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
 
-  /* Display — Instrument Serif. High contrast, editorial, built for 10rem. */
-  --font-display: var(--font-instrument), ui-serif, Georgia, serif;
-  /* Body and UI — Familjen Grotesk. Quiet, warm, a little Swedish. */
-  --font-sans: var(--font-familjen), ui-sans-serif, system-ui, sans-serif;
-  /* Docket — Spline Sans Mono. Serials, timestamps, provenance. Never paragraphs. */
-  --font-mono: var(--font-spline-mono), ui-monospace, monospace;
+  /* Display — Archivo, very slightly wide. The width axis is the design element,
+     but held near 106–115 rather than run out to 125: at the top of the axis it
+     reads as sports lettering, and this is a notebook. */
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  /* Body and UI — Hanken Grotesk. Humanist, open, unfussy at 14px and at 11pm. */
+  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  /* Docket — DM Mono. Serials, timestamps, provenance. Never paragraphs. */
+  --font-mono: var(--font-dm-mono), ui-monospace, monospace;
 }
 
 /* ==========================================================================
@@ -120,32 +163,48 @@
    ========================================================================== */
 
 :root {
-  --gutter: clamp(1.5rem, 5vw, 5.5rem);
-  --section: clamp(5rem, 9vw, 9rem);
-  --block: clamp(2rem, 3.5vw, 3.5rem);
+  /*
+   * Density. A 4px base, and every value below is a multiple of it.
+   *
+   * These are roughly a third of what the editorial system used (--section was
+   * up to 9rem, --block up to 3.5rem). That single change is most of what turns
+   * this from a document into a tool: the front page went from about one
+   * section per screen to the whole of "what's due" in one view.
+   */
+  --gutter: clamp(1rem, 2.5vw, 2rem);
+  --section: clamp(2rem, 3.5vw, 3rem);
+  --block: clamp(1rem, 1.75vw, 1.5rem);
 
-  /* The hanging margin: where serials, rubrics and the through-line rail live. */
-  --rail: 0rem;
+  /* The shell. */
+  --sidebar: 15rem;
+  --sheet: 78rem;
+  --measure: 68ch;
 
-  --sheet: 84rem;
-  --measure: 64ch;
+  /* Surfaces. A small radius and a shadow you have to look for — enough to read
+     as a raised panel, not enough to read as a 2013 dashboard. */
+  --radius: 0.5rem;
+  --shadow:
+    0 1px 2px rgba(22, 35, 58, 0.04),
+    0 2px 8px rgba(22, 35, 58, 0.05);
 
   /*
-   * Motion DNA (MOTION.md). Two tempos, one easing family, zero overshoot — a
-   * press strikes and stops dead; it does not bounce back off the paper.
+   * Motion DNA (MOTION.md). Two tempos, one easing family, zero overshoot.
+   *
+   * The metaphor is a hand working fast on paper — a rule snapped down against a
+   * straightedge, a figure written, a line ruled under the thing that matters.
+   * Quick to start, decisive to stop. The tempos are all roughly 15% shorter
+   * than the press they replaced, which is most of what "energetic" means here:
+   * the same choreography, arriving sooner. Zero overshoot is what keeps that
+   * from tipping into bouncy — a straightedge does not spring back.
    */
   --strike: cubic-bezier(0.16, 1, 0.3, 1);
   --draw: cubic-bezier(0.22, 0.61, 0.36, 1);
-  --t-micro: 200ms;
-  --t-strike: 460ms;
-  --t-draw: 880ms;
+  --t-micro: 160ms;
+  --t-strike: 400ms;
+  --t-draw: 720ms;
 
-  /* Live state, written by the motion layer, read by rules and the rail. */
+  /* Live state, written by the motion layer, read by rules and marks. */
   --status: var(--ink);
-  /* Shared scroll-velocity source, −1…1. One value drives every reactive thing. */
-  --vel: 0;
-  /* Page scroll progress, 0…1. Drives the margin rail's fill. */
-  --progress: 0;
 }
 
 @media (min-width: 64rem) {
@@ -174,40 +233,36 @@ body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font-sans);
-  line-height: 1.6;
+  /* 15px. UI type, not article type — the reference density for tools of this
+     kind is 12–14px labels against a 15–16px body. */
+  font-size: 0.9375rem;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow-x: clip;
 }
 
 ::selection {
-  background: var(--ink);
-  color: var(--paper);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--ink);
 }
 
+/* The accent, at the weight of a ruled line. The ring used to be the urgent ink,
+   which said "something is wrong here" about a button you had merely tabbed to —
+   and disappeared entirely against anything already inked urgent. */
 :focus-visible {
-  outline: 2px solid var(--vermilion);
-  outline-offset: 3px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-/* The stock itself. A very fine tooth, so large paper areas read as printed
-   rather than as a flat fill — one inline data URI, no image request, and it
-   sits under everything at low enough contrast to never touch legibility. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0.55;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E");
-}
-
-@media (prefers-color-scheme: dark) {
-  body::before {
-    opacity: 0.28;
-  }
-}
+/*
+ * The ruled/graph-paper ground has been removed.
+ *
+ * It was a fixed pair of hairline gradients behind the whole page. On a sparse
+ * editorial layout it read as tidiness; behind cards, tables and a sidebar it
+ * reads as noise showing through the gaps, and it fought the one thing this
+ * version is for — scanning. A tool's background is a background.
+ */
 
 /* ==========================================================================
    COMPONENTS
@@ -225,41 +280,74 @@ body::before {
 
 /* ---------- Typography ---------- */
 
+/*
+ * Display — Archivo.
+ *
+ * ## The scale is by role, and the roles are these
+ *
+ *   display--xl   2.4rem   page title      one per page, in PageHeader
+ *   display--lg   1.5rem   section title   SectionHead, and the front-page verdict
+ *   display--md   1.05rem  card heading    a class name, a card's subject
+ *   display--sm   0.94rem  small heading   sidebar brand, inline headings
+ *
+ *   fig--xl       2.1rem   hero figure     a grade, the number in a metric tile
+ *   fig--lg       1.7rem   figure          a secondary reading
+ *
+ * The jump from a section title to a page title is deliberately large (1.5 →
+ * 2.4rem). An earlier pass over-corrected away from a 4.75rem editorial headline
+ * and landed at 1.875rem, which put the page title within a whisker of its own
+ * section titles — the page stopped having an obvious top. A tool's heading
+ * should be unmistakably a heading and then get out of the way; unmistakable is
+ * doing as much work in that sentence as "get out of the way".
+ */
 .display {
   font-family: var(--font-display);
-  font-weight: 400;
-  line-height: 0.9;
-  letter-spacing: -0.022em;
+  font-weight: 600;
+  font-variation-settings: "wdth" 100;
+  line-height: 1.15;
+  letter-spacing: -0.018em;
   text-wrap: balance;
 }
 
+/* Page title. */
 .display--xl {
-  font-size: clamp(3rem, 10vw, 8.5rem);
+  font-size: clamp(1.875rem, 3vw, 2.4rem);
+  font-weight: 640;
+  line-height: 1.08;
+  letter-spacing: -0.028em;
 }
+/* Section title. */
 .display--lg {
-  font-size: clamp(2.25rem, 6.5vw, 5rem);
+  font-size: clamp(1.25rem, 2vw, 1.5rem);
+  line-height: 1.15;
+  letter-spacing: -0.022em;
 }
+/* Card heading. */
 .display--md {
-  font-size: clamp(1.7rem, 3.4vw, 2.7rem);
-  line-height: 0.98;
+  font-size: 1.0625rem;
+  line-height: 1.25;
 }
+/* Small heading. */
 .display--sm {
-  font-size: clamp(1.3rem, 2.2vw, 1.65rem);
-  line-height: 1.06;
-  letter-spacing: -0.012em;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+  letter-spacing: -0.008em;
 }
 
-/* Instrument Serif's italic is the design element — never a substitute for bold. */
+/* Emphasis inside display type takes the accent. Not italic — a grotesk italic
+   at this size reads as a mistake — and not a highlight, which read as a
+   marker-pen and made every emphasised phrase compete with the navigation. */
 .display em {
-  font-style: italic;
+  font-style: normal;
+  color: var(--accent);
 }
 
-/* The micro-label. Letterpress caption type: small, tracked wide, uppercase. */
+/* The micro-label — column headers, card labels, metadata keys. */
 .rubric {
   font-family: var(--font-sans);
   font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.17em;
+  font-weight: 600;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--ink-soft);
   line-height: 1.5;
@@ -270,7 +358,7 @@ body::before {
   font-family: var(--font-mono);
   font-size: 0.75rem;
   font-weight: 400;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.005em;
   font-variant-numeric: tabular-nums;
   color: var(--ink-soft);
 }
@@ -282,44 +370,99 @@ body::before {
   font-feature-settings: "tnum" 1, "lnum" 1;
 }
 
+/* KPI figures. The thing you read first *within a card*, and no bigger — the
+   reference for a metric tile is 28–32px. */
 .fig--xl {
   font-family: var(--font-display);
-  font-size: clamp(3.25rem, 8vw, 6.5rem);
-  line-height: 0.82;
-  letter-spacing: -0.03em;
+  font-weight: 620;
+  font-variation-settings: "wdth" 100;
+  font-size: 2.125rem;
+  line-height: 1;
+  letter-spacing: -0.028em;
 }
 
 .fig--lg {
   font-family: var(--font-display);
-  font-size: clamp(1.9rem, 3.8vw, 2.9rem);
-  line-height: 0.9;
-  letter-spacing: -0.02em;
+  font-weight: 620;
+  font-variation-settings: "wdth" 100;
+  font-size: 1.6875rem;
+  line-height: 1.05;
+  letter-spacing: -0.022em;
 }
 
 .prose {
   max-width: var(--measure);
-  font-size: 1.0625rem;
-  line-height: 1.72;
+  font-size: 0.9375rem;
+  line-height: 1.65;
   text-wrap: pretty;
 }
 
+/* The one-sentence "what this page is for" line under a page title. */
 .prose--lead {
-  font-size: clamp(1.1rem, 1.9vw, 1.4rem);
-  line-height: 1.58;
+  font-size: 0.9375rem;
+  line-height: 1.5;
 }
 
-/* The oversized margin serial. Depth without decoration — set *in* the paper. */
+.prose {
+  max-width: var(--measure);
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+/* The one-sentence "what this page is for" line under a page title. */
+.prose--lead {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+/*
+ * The margin serial is gone.
+ *
+ * It was a 3rem outlined numeral sitting in the hanging-margin rail — pure
+ * editorial furniture, and the rail it lived in does not exist any more. Kept as
+ * a no-op rather than deleted because six page files still render it; hiding it
+ * here removes it everywhere without touching them.
+ */
 .serial {
+  display: none;
+}
+
+.serial--unused {
   font-family: var(--font-display);
-  font-size: clamp(2.25rem, 4.5vw, 3.75rem);
+  font-weight: 620;
+  font-variation-settings: "wdth" 110;
+  font-size: clamp(2rem, 4vw, 3.1rem);
   line-height: 0.8;
-  color: var(--ink);
-  opacity: 0.15;
+  /* Filled fallback first: where text-stroke isn't supported, a transparent
+     fill alone would delete the serial rather than outline it. */
+  color: color-mix(in srgb, var(--ink) 16%, transparent);
   font-variant-numeric: tabular-nums;
   user-select: none;
 }
 
+
+
 /* ---------- Structure ---------- */
+
+/* ---------- The shell ----------
+   A persistent sidebar and a scrolling content column. This is the layout every
+   tool people like converges on — Linear, Notion, Vercel — and the reason is
+   dull and decisive: it is always visible, so you never have to work out how to
+   get back to something. The masthead this replaced put six links in a row at
+   the top of a page and then let them scroll away. */
+
+.app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 100%;
+}
+
+@media (min-width: 64rem) {
+  .app {
+    grid-template-columns: var(--sidebar) minmax(0, 1fr);
+  }
+}
 
 .sheet {
   width: 100%;
@@ -330,25 +473,110 @@ body::before {
   z-index: 1;
 }
 
-/* The hanging margin. Everything on a page hangs off one left edge; the column
-   to the left of it carries serials, rubrics and the through-line. */
+/*
+ * The hanging margin is gone — this is now a plain block.
+ *
+ * `.hang` used to be a two-column grid whose first column was a 5.5rem rail for
+ * serials and rubrics. Every page still renders that rail as an empty <span>,
+ * and collapsing the grid here makes those spans lay out as nothing at all. So
+ * six page files lose the editorial margin without a single edit, which is why
+ * the class is neutered rather than deleted.
+ */
 .hang {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  column-gap: clamp(1.25rem, 2.5vw, 2.5rem);
+  display: block;
 }
 
-@media (min-width: 64rem) {
-  .hang {
-    grid-template-columns: var(--rail) minmax(0, 1fr);
-  }
-}
-
-/* A full-bleed band on the second stock — used to change the pacing between
-   dense and sparse passages, never for decoration. */
+/* A full-bleed band on the second stock, for a footer or a section that wants
+   to sit back from the page. */
 .band {
   background: var(--paper-deep);
   border-block: 1px solid var(--rule);
+}
+
+/* ---------- Surfaces ----------
+   The thing the last three versions of this design refused to have, and the
+   reason nothing on a page read as belonging together: whitespace separates,
+   but only a surface *groups*. A card is a hairline border, a small radius and
+   a shadow you have to look for. */
+
+.card {
+  background: var(--paper-lift);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* The header strip of a card: a label, and usually a count or a control. */
+.card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.card__body {
+  padding: 0.875rem;
+}
+
+/*
+ * Rows inside a list card.
+ *
+ * The inset lives on the container's children rather than on `<DocketRow>`,
+ * because half the lists in the product are hand-written `<li>`s — grade
+ * categories, the retro's findings, a day's commitments. Those had no padding of
+ * their own and their right-aligned figures ran into the card's border. Styling
+ * the child selector means every list gets it, including ones written later.
+ */
+.docket-list > li {
+  padding-inline: 0.75rem;
+}
+
+/*
+ * The row you are in right now.
+ *
+ * A tinted band and an accent edge — the same accent that means "here" in the
+ * sidebar. `data-current` is set by ScheduleNow after mount; with no JavaScript
+ * no row is marked and the schedule is simply a schedule.
+ */
+.row-live[data-current="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 0 var(--accent);
+}
+
+/* A metric tile. One number, one label, one optional note — the reference says
+   four to six of these above the fold and nothing else competing. */
+.tile {
+  background: var(--paper-lift);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.75rem 0.875rem;
+  min-width: 0;
+}
+
+/* ---------- Course colour ----------
+   The left-edge bar that says which class a row belongs to. Never text: see the
+   two-slot rule at the top of this file. */
+
+.chip {
+  display: inline-block;
+  flex: none;
+  width: 3px;
+  align-self: stretch;
+  min-height: 1.1em;
+  border-radius: 2px;
+  background: var(--course, var(--rule));
+}
+
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+  background: var(--course, var(--rule));
 }
 
 .rule-h {
@@ -370,11 +598,23 @@ body::before {
   background: var(--status);
 }
 
-/* ---------- Plate registration ----------
-   The signature. Display type prints as two impressions — the ink plate and a
-   ghost of the signal plate behind it. They converge into register on entrance
-   and drift apart again with scroll velocity (MOTION.md → Misregistration
-   Drift), so the whole page leans as one organism. */
+/* ---------- The title rule ----------
+   The signature (MOTION.md → Title Rule). One line per page — the page's own
+   name — is underlined by a weighted accent rule, drawn from the left a beat
+   after the type lands. It is the only mark in the system carrying no data, and
+   it earns that by being the thing a ruled page is made of.
+
+   This replaced a chartreuse highlighter band swept behind the same line. The
+   gesture was right and the colour was not: a neon marker reads as a game, and
+   a band *behind* type is always in tension with the type. A rule sits under
+   the line, in reading order, and says the same thing more quietly.
+
+   Selective on purpose — one per page. A rule under every heading is just an
+   underline, and stops meaning anything.
+
+   No duplicated text: this is an empty element, which is strictly better than
+   the band it replaced. Nothing to keep in sync, nothing to leak into the
+   accessibility tree or the clipboard. */
 
 .plate {
   position: relative;
@@ -387,27 +627,78 @@ body::before {
   position: relative;
 }
 
-.plate__ghost {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  color: var(--ghost);
+.plate__rule {
+  display: block;
+  height: 2px;
+  width: 2.25rem;
+  margin-top: 0.5rem;
+  background: var(--accent);
+  transform-origin: left center;
   pointer-events: none;
-  user-select: none;
-  /* --off is driven by the entrance timeline, --vel by the shared velocity source. */
-  transform: translate3d(
-      calc(var(--off, 0px) + var(--vel) * -9px),
-      calc(var(--off, 0px) * 0.42),
-      0
-    )
-    rotate(calc(var(--vel) * -0.35deg));
-  will-change: transform;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .plate__ghost {
-    display: none;
+/* ---------- Sidebar ---------- */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 0.875rem;
+  background: var(--paper-deep);
+  border-bottom: 1px solid var(--rule);
+}
+
+@media (min-width: 64rem) {
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    overflow-y: auto;
+    border-bottom: 0;
+    border-right: 1px solid var(--rule);
   }
+}
+
+/* A nav row. 32px high, and the active state is a soft accent wash rather than
+   a fill — an always-visible nav that shouts is exhausting by the third page. */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2rem;
+  padding: 0 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+  text-decoration: none;
+  transition:
+    background-color var(--t-micro) var(--strike),
+    color var(--t-micro) var(--strike);
+}
+
+.nav-item:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink);
+}
+
+.nav-item[aria-current="page"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* The count/badge on the right of a nav row. */
+.nav-item__count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+}
+
+.nav-item[aria-current="page"] .nav-item__count {
+  color: var(--accent);
 }
 
 /* ---------- Marks ----------
@@ -431,7 +722,7 @@ body::before {
    replay still reads without colour. */
 .mark[data-shape="miss"] {
   background: transparent;
-  border-color: var(--vermilion);
+  border-color: var(--flare);
   position: relative;
 }
 
@@ -442,18 +733,31 @@ body::before {
   background: linear-gradient(
     to bottom right,
     transparent 44%,
-    var(--vermilion) 44%,
-    var(--vermilion) 56%,
+    var(--flare) 44%,
+    var(--flare) 56%,
     transparent 56%
   );
 }
 
 /* ---------- Controls ----------
-   Letterpress: an inked rule, a label, and pressure on hover. Never a pill,
-   never a fill that appears from nowhere. */
+   A ruled box, a label, and the accent flooding up from the baseline under
+   pressure. Never a pill, never a fill that appears from nowhere.
+
+   The flood is the accent, so the control you are about to press, the primary
+   action on the page and the section you are in are all the same blue. Three
+   vars, so a call site can say what floods without restating the rest:
+
+     --control-ink   the label at rest        (default: ink)
+     --control-fill  what floods up on press  (default: accent)
+     --control-on    the label on top of it   (default: white)
+
+   The rating buttons in a review session are the reason `fill` is separate:
+   "again" floods urgent and "easy" floods affirmative. */
 
 .control {
   --control-ink: var(--ink);
+  --control-fill: var(--accent);
+  --control-on: var(--accent-ink);
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -476,13 +780,13 @@ body::before {
     border-color var(--t-micro) var(--strike);
 }
 
-/* The ink flooding up from the baseline — pressure, not a colour swap. */
+/* The accent flooding up from the baseline — pressure, not a colour swap. */
 .control::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: var(--control-ink);
+  background: var(--control-fill);
   transform: scaleY(0);
   transform-origin: bottom center;
   transition: transform var(--t-strike) var(--strike);
@@ -490,8 +794,8 @@ body::before {
 
 .control:hover:not(:disabled),
 .control:focus-visible {
-  color: var(--paper);
-  border-color: var(--control-ink);
+  color: var(--control-on);
+  border-color: var(--control-fill);
 }
 
 .control:hover:not(:disabled)::before,
@@ -499,9 +803,10 @@ body::before {
   transform: scaleY(1);
 }
 
+/* The primary action on a page is already marked, before you touch it. */
 .control[data-active="true"] {
-  color: var(--paper);
-  border-color: var(--ink);
+  color: var(--control-on);
+  border-color: var(--control-fill);
 }
 
 .control[data-active="true"]::before {
@@ -513,7 +818,9 @@ body::before {
   cursor: default;
 }
 
-/* Inline links. The rule under the word thickens under pressure. */
+/* Inline links. A hairline at rest; under pressure the word and its rule both
+   take the accent and the rule thickens — the same gesture, at word scale, as
+   the accent rule under a page title. */
 .link {
   color: var(--ink);
   text-decoration: none;
@@ -521,10 +828,16 @@ body::before {
   background-repeat: no-repeat;
   background-position: 0 100%;
   background-size: 100% 1px;
-  transition: background-size var(--t-micro) var(--strike);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition:
+    color var(--t-micro) var(--strike),
+    background-size var(--t-micro) var(--strike);
 }
 
-.link:hover {
+.link:hover,
+.link:focus-visible {
+  color: var(--accent);
   background-size: 100% 2px;
 }
 
@@ -564,7 +877,7 @@ select.field {
   background-repeat: no-repeat;
   background-position: right 0.15rem center;
   background-size: 0.5rem;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%2315120E'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%2315191C'/%3E%3C/svg%3E");
 }
 
 /* File inputs: give the native button an inked rule, so it reads as pressable
@@ -596,10 +909,23 @@ select.field {
 
 } /* @layer components */
 
-@media (prefers-color-scheme: dark) {
-  select.field {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23F0EBE1'/%3E%3C/svg%3E");
-  }
+/*
+ * The margin serial is gone, and this rule is deliberately *outside*
+ * `@layer components`.
+ *
+ * It was a 3rem outlined numeral living in the hanging-margin rail — pure
+ * editorial furniture, and the rail no longer exists. Six page files still
+ * render it, and every one of them writes `className="serial hidden lg:block"`.
+ * Inside the components layer this hide lost to `lg:block` (utilities outrank
+ * the layer, by design) and the numerals came back as unstyled body text: a bare
+ * "02" sitting above a section heading. Unlayered, it outranks the utility and
+ * the markup can stay untouched.
+ *
+ * This is the same specificity trap the comment above the layer describes,
+ * arriving from the other direction — worth keeping both notes.
+ */
+.serial {
+  display: none;
 }
 
 /* ==========================================================================
@@ -612,16 +938,16 @@ select.field {
    ========================================================================== */
 
 /*
- * Press Strike — type rises into place.
+ * Strike — type rises into place.
  *
  * This used to mask the line with `overflow: hidden` and slide it up from
  * behind its own rule, which looked better and clipped the heading's right edge
  * the entire time it was animating — plus permanently, on any heading whose
- * mask release didn't run, and on the ghost plate every time it drifted. Text
- * that gets sliced is a worse failure than a plainer entrance is a loss, so the
- * mask is gone and nothing here can clip anything.
+ * mask release didn't run. Text that gets sliced is a worse failure than a
+ * plainer entrance is a loss, so the mask is gone and nothing here can clip
+ * anything.
  */
-html.js [data-strike] > :not(.plate__ghost) {
+html.js [data-strike] > :not(.plate__rule) {
   opacity: 0;
   transform: translateY(0.4em);
 }
@@ -637,10 +963,25 @@ html.js [data-draw] {
   transform: scaleX(0);
 }
 
-/* Docket Advance — a row is revealed along its own rule. */
-html.js [data-advance] {
-  clip-path: inset(0 100% 0 0);
-}
+/*
+ * Docket Advance is gone, and this note is the reason.
+ *
+ * Rows used to be revealed by animating `clip-path: inset(0 100% 0 0)` open.
+ * The reveal layer observes what exists when the page loads, so any row React
+ * created *later* — a task you just added, a list re-rendered by
+ * `revalidatePath` after ticking something off — was watched by nothing and sat
+ * at that initial state permanently: fully clipped, invisible, and impossible
+ * to click.
+ *
+ * MOTION.md had this written down as an anti-pattern before the bug was
+ * written. It was reintroduced anyway, on a component whose whole job is rows
+ * that appear after mount.
+ *
+ * It could have been fixed with a MutationObserver. It was deleted instead: it
+ * is the only reveal in the system that hides content by clipping it, it is
+ * decorative on a list you are trying to read, and a tool should not animate
+ * rows in at all. Nothing replaces it.
+ */
 
 /* Impression Settle — a figure or block is pressed onto the page. */
 html.js [data-press] {
@@ -648,27 +989,29 @@ html.js [data-press] {
   transform: translateY(0.6rem) scale(1.012);
 }
 
-/* The ghost plate starts out of register and converges. */
-html.js .plate__ghost {
-  --off: 0.9rem;
+/* Title Rule — the accent rule is undrawn until the line above it has landed.
+   Gated behind html.js, so a page with no scripting shows the rule already
+   drawn at full width. */
+html.js [data-mark] .plate__rule {
+  transform: scaleX(0);
 }
 
 /*
- * Reduced motion: the same page, printed rather than pressed.
+ * Reduced motion: the same page, arrived at rather than drawn.
  *
  * These selectors must match the hiding selectors above *character for
  * character*. A media query adds no specificity, so `html.js [data-strike] > *`
- * (0,3,0) loses to `html.js [data-strike] > :not(.plate__ghost)` (0,3,1) and the
- * masked type stays translated out of its own overflow box — every display
- * heading in the product silently invisible for exactly the users who asked for
- * less motion. Keep the pairs identical; ties are resolved by source order, and
- * these come last.
+ * (0,3,0) loses to `html.js [data-strike] > :not(.plate__rule)` (0,3,1) and the
+ * type stays translated down at zero opacity — every display heading in the
+ * product silently invisible for exactly the users who asked for less motion.
+ * Keep the pairs identical; ties are resolved by source order, and these come
+ * last.
  */
 @media (prefers-reduced-motion: reduce) {
-  html.js [data-strike] > :not(.plate__ghost),
+  html.js [data-strike] > :not(.plate__rule),
   html.js [data-draw],
-  html.js [data-advance],
-  html.js [data-press] {
+  html.js [data-press],
+  html.js [data-mark] .plate__rule {
     transform: none;
     opacity: 1;
     clip-path: none;
@@ -694,51 +1037,6 @@ html.js .plate__ghost {
 }
 
 /* ==========================================================================
-   THROUGH-LINE
-   A hairline down the hanging margin on every page, filling with scroll
-   progress. It is the one element present the whole way down, which is what
-   stops five pages feeling like five separate products.
-   ========================================================================== */
-
-.throughline {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  /* Out in the gutter, clear of the hanging margin. Sitting it on the content
-     edge put a live rule straight through every rubric in the rail column. */
-  left: calc((100vw - min(100vw, var(--sheet))) / 2 + 1.25rem);
-  width: 1px;
-  background: var(--rule-soft);
-  z-index: 5;
-  pointer-events: none;
-  display: none;
-}
-
-.throughline__fill {
-  position: absolute;
-  inset-inline: 0;
-  top: 0;
-  height: calc(var(--progress) * 100%);
-  background: var(--status);
-}
-
-.throughline__head {
-  position: absolute;
-  left: -2px;
-  width: 5px;
-  height: 5px;
-  background: var(--status);
-  top: calc(var(--progress) * 100%);
-  transform: translateY(-50%);
-}
-
-@media (min-width: 64rem) {
-  .throughline {
-    display: block;
-  }
-}
-
-/* ==========================================================================
    SHEET SLIP
    The page-turn. A sheet of stock slips up over the outgoing route and away
    from the incoming one, so a navigation never flashes.
@@ -749,7 +1047,9 @@ html.js .plate__ghost {
   inset: 0;
   z-index: 90;
   background: var(--paper-deep);
-  border-top: 2px solid var(--ink);
+  /* The leading edge is the accent, so a navigation reads as one rule drawn up
+     over the page — the same gesture as a page's title rule, at page scale. */
+  border-top: 3px solid var(--accent);
   transform: translateY(100%);
   pointer-events: none;
 }

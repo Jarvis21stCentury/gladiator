@@ -14,12 +14,12 @@ gsap.registerPlugin(ScrollTrigger, useGSAP);
  * The press.
  *
  * One controller runs every named pattern in MOTION.md that isn't a bespoke
- * scene, plus the two shared sources that make the whole page behave as one
- * organism: scroll *velocity* (which pulls the ghost plates out of register) and
- * scroll *progress* (which fills the through-line in the margin).
+ * scene. Everything is a short entrance and nothing is continuous: this is a
+ * tool, and motion that is still happening while you are reading is motion
+ * working against the person using it.
  *
  * Pages never import GSAP. They mark up intent — `data-draw`, `data-strike`,
- * `data-advance`, `data-press` — and this decides how any of it moves. That is
+ * `data-press` — and this decides how any of it moves. That is
  * what stops five pages drifting into five motion languages, and it means a new
  * section is animated correctly by default rather than by remembering to.
  *
@@ -55,12 +55,10 @@ export function Press({ level }: { level: StatusLevel }) {
         const all = (selector: string) => document.querySelectorAll(selector);
 
         gsap.set(all("[data-draw]"), { scaleX: 1 });
-        gsap.set(all("[data-strike] > :not(.plate__ghost)"), { y: 0, opacity: 1 });
-        gsap.set(all("[data-advance]"), { clipPath: "inset(0 0% 0 0)" });
+        gsap.set(all("[data-strike] > :not(.plate__rule)"), { y: 0, opacity: 1 });
         gsap.set(all("[data-press]"), { opacity: 1, y: 0, scale: 1 });
         gsap.set(all("[data-meter]"), { scaleX: 1 });
-        gsap.set(all(".plate__ghost"), { "--off": "0rem" });
-        root.style.setProperty("--progress", "1");
+        gsap.set(all("[data-mark] .plate__rule"), { scaleX: 1 });
       });
 
       media.add("(prefers-reduced-motion: no-preference)", () => {
@@ -148,53 +146,54 @@ export function Press({ level }: { level: StatusLevel }) {
         /* ---- Rule Draw ---------------------------------------------------
            Structure arrives before content. Every hairline draws from the left,
            and because rules sit above the type they introduce, a section is
-           already framed by the time anything strikes into it. */
+           already framed by the time anything strikes into it.
+
+           Everything in this block is roughly half the duration it ran at when
+           this was an editorial layout. A document can afford a 0.9s reveal
+           because you are reading it top to bottom; a tool cannot, because you
+           opened it to find one date and every frame of animation is a frame
+           you are waiting. Nothing here should be watchable — you should only
+           notice that the page assembled rather than blinked. */
         reveal("[data-draw]", (batch) =>
           gsap.to(batch, {
             scaleX: 1,
-            duration: 0.88,
+            duration: 0.4,
             ease: "power2.out",
-            stagger: 0.06,
+            stagger: 0.02,
           }),
         );
 
-        /* ---- Press Strike ------------------------------------------------
+        /* ---- Strike ------------------------------------------------------
            Type rises into place and stops dead. Deliberately not masked: see
            the note in globals.css — the mask clipped headings while they moved. */
         reveal("[data-strike]", (batch) =>
           gsap.to(
             batch.map(
-              (el) => el.querySelector(":scope > :not(.plate__ghost)") ?? el,
+              (el) => el.querySelector(":scope > :not(.plate__rule)") ?? el,
             ),
             {
               y: 0,
               opacity: 1,
-              duration: 0.62,
+              duration: 0.32,
               ease: "expo.out",
-              stagger: 0.07,
+              stagger: 0.025,
             },
           ),
         );
 
-        /* ---- Plate Registration ------------------------------------------ */
-        reveal(".plate__ghost", (batch) =>
-          gsap.to(batch, {
-            "--off": "0rem",
-            duration: 1.1,
-            ease: "expo.out",
-            stagger: 0.05,
-          }),
-        );
+        /* ---- Title Rule — the signature -----------------------------------
+           The accent rule is drawn from the left under the page's title.
+           Deliberately *after* the type: the line is written, then it is ruled
+           under. `power4.out` for a stroke that leaves fast and settles slowly.
 
-        /* ---- Docket Advance ----------------------------------------------
-           Rows are revealed along their own rule rather than fading up. Reading
-           direction, and much faster to scan than a stack of independent fades. */
-        reveal("[data-advance]", (batch) =>
+           A composited transform rather than the paint-bound background sweep
+           this replaced, so it is cheap enough to never need a caveat. */
+        reveal("[data-mark] .plate__rule", (batch) =>
           gsap.to(batch, {
-            clipPath: "inset(0 0% 0 0)",
-            duration: 0.66,
-            ease: "power3.out",
-            stagger: 0.045,
+            scaleX: 1,
+            duration: 0.36,
+            ease: "power4.out",
+            delay: 0.1,
           }),
         );
 
@@ -204,9 +203,9 @@ export function Press({ level }: { level: StatusLevel }) {
             opacity: 1,
             y: 0,
             scale: 1,
-            duration: 0.7,
+            duration: 0.36,
             ease: "expo.out",
-            stagger: 0.06,
+            stagger: 0.03,
           }),
         );
 
@@ -215,44 +214,24 @@ export function Press({ level }: { level: StatusLevel }) {
           gsap.set(batch, { scaleX: 0 });
           gsap.to(batch, {
             scaleX: 1,
-            duration: 0.9,
+            duration: 0.5,
             ease: "power3.out",
-            stagger: 0.07,
+            stagger: 0.03,
           });
         });
 
-        /* ---- Misregistration Drift + through-line -------------------------
-           The two shared sources. One velocity value pulls every ghost plate on
-           the page out of register at the same moment and lets them settle back
-           when you stop; one progress value fills the margin rail. Piping both
-           through CSS custom properties means the reactive layer costs a single
-           style write per frame no matter how much is on screen. */
-        let target = 0;
-        let current = 0;
-
-        const velocity = ScrollTrigger.create({
-          onUpdate: (self) => {
-            target = gsap.utils.clamp(-1, 1, self.getVelocity() / 3200);
-          },
-        });
-
-        const progress = ScrollTrigger.create({
-          start: 0,
-          end: "max",
-          onUpdate: (self) =>
-            root.style.setProperty("--progress", self.progress.toFixed(4)),
-        });
-
-        const tick = () => {
-          // getVelocity only reports while scrolling, so the target has to decay
-          // on its own or the plates would stay separated at rest.
-          target *= 0.9;
-          current += (target - current) * 0.12;
-          if (Math.abs(current) < 0.0005) current = 0;
-          root.style.setProperty("--vel", current.toFixed(4));
-        };
-
-        gsap.ticker.add(tick);
+        /*
+         * The scroll-velocity layer is gone.
+         *
+         * It lerped a scroll-velocity value into a CSS custom property every
+         * frame, which leaned page titles and margin serials against the
+         * direction of travel and stretched the scroll rail's head into a
+         * streak. As connective tissue across five editorial pages it did real
+         * work. In an app shell it is the wrong instinct outright: everything it
+         * moved is either gone (the rail, the serials) or is a heading you are
+         * trying to read *while* scrolling past it. Deleting it also takes a
+         * per-frame style write off every page in the product.
+         */
 
         const atBottom = () => {
           if (
@@ -269,10 +248,6 @@ export function Press({ level }: { level: StatusLevel }) {
         return () => {
           for (const observer of observers) observer.disconnect();
           window.removeEventListener("scroll", atBottom);
-          gsap.ticker.remove(tick);
-          velocity.kill();
-          progress.kill();
-          root.style.setProperty("--vel", "0");
         };
       });
 

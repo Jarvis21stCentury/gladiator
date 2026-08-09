@@ -99,7 +99,7 @@ function hasUserEdits(
  * good rather than corrected.
  */
 export async function runCalendarSync(): Promise<CalendarSyncResult> {
-  const config = getGoogleConfig();
+  const config = await getGoogleConfig();
   const warnings: string[] = [];
 
   if (!isCalendarConfigured(config)) {

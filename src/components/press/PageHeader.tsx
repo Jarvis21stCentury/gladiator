@@ -1,7 +1,5 @@
 import type { ReactNode } from "react";
 
-import { serial } from "@/lib/format";
-
 import { Plate } from "./Plate";
 import { Rule } from "./Rule";
 
@@ -14,21 +12,26 @@ export interface PageSection {
 /**
  * The top of every page: what this page is, and what's on it.
  *
- * The almanac was legible and unhelpful. A page opened on a dateline and a
+ * The old front matter was legible and unhelpful. A page opened on a dateline and a
  * beautiful headline, and nowhere did it say what the page was for, what any
  * section did, or where you could go — you had to scroll the whole thing to
  * find out it existed. So every page now leads with one plain sentence and a
  * numbered contents list that doubles as jump links.
  *
- * The contents are the navigation for a long page. They also set expectations
- * before the first scroll, which is most of what "organised" means here.
+ * `purpose` and `contents` are accepted and deliberately not rendered.
+ *
+ * The purpose line explained what the page was for — read once, then a sentence
+ * you scroll past forever. The contents list was in-page navigation from before
+ * there was a sidebar, and a second nav that only covers the page you are
+ * already on costs a row of links to save one scroll.
+ *
+ * Kept on the interface because all six pages pass them; see SectionHead for
+ * the same reasoning.
  */
 export function PageHeader({
   eyebrow,
   title,
-  purpose,
   meta,
-  contents,
 }: {
   /** Small label above the rule — the dateline, the range, the count. */
   eyebrow: ReactNode;
@@ -41,51 +44,21 @@ export function PageHeader({
 }) {
   return (
     <section className="sheet pt-[var(--block)]">
-      <div className="hang">
-        <span aria-hidden="true" className="hidden lg:block" />
-        <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-3">
-          <div className="docket">{eyebrow}</div>
-          {meta ? <div>{meta}</div> : null}
-        </div>
-      </div>
-
-      <Rule weight="heavy" className="mt-4" />
-
-      <div className="hang mt-[var(--block)]">
-        <span aria-hidden="true" className="hidden lg:block" />
-        <div>
-          <Plate as="h1" className="display display--xl">
+      {/* Title, purpose and page state on one band, then the rule. This used to
+          be a full screen: a dateline, a 4.75rem headline, a lead paragraph and
+          a numbered contents list, before a single piece of data. */}
+      <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-2">
+        <div className="min-w-0">
+          <div className="docket text-[0.6875rem]">{eyebrow}</div>
+          <Plate as="h1" className="display display--xl mt-1" mark>
             {title}
           </Plate>
-
-          <p className="prose prose--lead mt-6 max-w-[52ch] text-ink-soft">
-            {purpose}
-          </p>
-
-          {contents && contents.length > 0 ? (
-            <nav className="mt-[var(--block)]" aria-label="On this page">
-              <p className="rubric mb-3">On this page</p>
-              <ol className="flex flex-wrap gap-x-7 gap-y-2">
-                {contents.map((section, index) => (
-                  <li key={section.id}>
-                    <a
-                      href={`#${section.id}`}
-                      className="group inline-flex items-baseline gap-2 no-underline"
-                    >
-                      <span className="docket text-[0.625rem] opacity-60">
-                        {serial(index + 1)}
-                      </span>
-                      <span className="border-b border-rule pb-0.5 text-[0.95rem] transition-colors duration-200 group-hover:border-ink">
-                        {section.label}
-                      </span>
-                    </a>
-                  </li>
-                ))}
-              </ol>
-            </nav>
-          ) : null}
         </div>
+
+        {meta ? <div className="shrink-0 pt-1">{meta}</div> : null}
       </div>
+
+      <Rule className="mt-[var(--block)]" />
     </section>
   );
 }

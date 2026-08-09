@@ -257,11 +257,25 @@ export function ReviewSession({
                   type="button"
                   className="control"
                   onClick={() => grade(rating)}
+                  /*
+                   * The two ends of the ladder flood their own signal ink
+                   * rather than the accent: this is the one place in the
+                   * product where pressing a button *is* the judgement, so the
+                   * colour has to carry it. Both floods are dark enough to keep
+                   * the default white label, but it is restated so a future
+                   * change to --accent-ink cannot silently break them.
+                   */
                   style={
                     rating === 1
-                      ? ({ "--control-ink": "var(--vermilion)" } as React.CSSProperties)
+                      ? ({
+                          "--control-fill": "var(--flare)",
+                          "--control-on": "#FFFFFF",
+                        } as React.CSSProperties)
                       : rating === 4
-                        ? ({ "--control-ink": "var(--moss)" } as React.CSSProperties)
+                        ? ({
+                            "--control-fill": "var(--jade)",
+                            "--control-on": "#FFFFFF",
+                          } as React.CSSProperties)
                         : undefined
                   }
                 >
@@ -280,7 +294,7 @@ export function ReviewSession({
           </p>
 
           {error ? (
-            <p className="docket mt-3" style={{ color: "var(--vermilion)" }}>
+            <p className="docket mt-3" style={{ color: "var(--flare)" }}>
               {error}
             </p>
           ) : null}

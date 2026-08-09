@@ -2,7 +2,6 @@ import "server-only";
 
 import {
   GOOGLE_CALENDAR_SCOPE,
-  getGoogleConfig,
   type GoogleConfig,
 } from "./config";
 
@@ -100,9 +99,7 @@ interface CachedToken {
 // var invalidates the cache instead of serving a token for the old account.
 const tokenCache = new Map<string, CachedToken>();
 
-export async function getAccessToken(
-  config: GoogleConfig = getGoogleConfig(),
-): Promise<string> {
+export async function getAccessToken(config: GoogleConfig): Promise<string> {
   if (!config.clientId || !config.clientSecret || !config.refreshToken) {
     throw new GoogleAuthError(
       "Google Calendar is not connected. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REFRESH_TOKEN — visit /api/google/auth to mint a refresh token.",

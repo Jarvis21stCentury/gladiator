@@ -414,8 +414,8 @@ CSS transforms; the grade trace is SVG, so it inherits ink from the plate for fr
   which put its own width past the right edge and gave the whole page a horizontal
   scrollbar until the track was clipped.
 - **Reduced motion** gets a complete branch in `Press.tsx`: every pattern resolves to its
-  final state immediately, the pin and scrub do not exist, and the ghost plates are not
-  rendered. The same page, printed rather than pressed.
+  final state immediately, the pin and scrub do not exist, the velocity lean is dropped and
+  the title rule is shown already at full width.
 
 ## Scheduled runs
 

@@ -9,11 +9,16 @@ import { STATUS_VAR, type StatusLevel } from "@/lib/status";
  * The masthead verdict — the one line on the dashboard that says how school is
  * actually going, and the only per-character strike in the product.
  *
- * Characters rise from behind their own line with a slight lean, the way type
- * arrives on a press bed, and the ghost plate converges into register behind
- * them as they land. Spending the kinetic budget on exactly one line per
+ * Characters rise from behind their own line with a slight lean, the way a hand
+ * writes a line out fast. Spending the kinetic budget on exactly one line per
  * session is what keeps it feeling like an event; doing it to every heading
  * would make it wallpaper.
+ *
+ * Deliberately never given the title rule. This line is inked with the system's
+ * current status whenever that isn't calm, and the accent is the product's other
+ * attention colour — a blue rule under a line already set in urgent red is two
+ * things pointing at once, which is one too many. The accent belongs to the page
+ * title; the status ink belongs here.
  *
  * The text is real, selectable text before, during and after — the splitter only
  * ever wraps existing nodes, and if it fails the sentence is already on screen.
@@ -61,35 +66,22 @@ export function Verdict({
          */
         face.setAttribute("aria-hidden", "true");
 
-        /*
-         * The ghost has to be split identically, not left as plain text.
-         * Wrapping glyphs in spans drops the kerning pairs between them, so a
-         * split face and an unsplit ghost land on subtly different positions —
-         * and a second plate that is *almost* aligned doesn't read as
-         * registration, it reads as dirt on the page. Splitting both means both
-         * lose the same kerning and the two impressions agree exactly.
-         */
-        const ghost = el.querySelector<HTMLElement>(".plate__ghost");
-        const ghostSplit = ghost
-          ? new SplitType(ghost, { types: "lines,chars", lineClass: "strike-line" })
-          : null;
-
         const timeline = gsap.timeline();
 
-        timeline
-          .from(split.chars, {
-            yPercent: 115,
-            skewY: 3,
-            duration: 0.78,
-            ease: "expo.out",
-            stagger: { each: 0.016 },
-          })
-          .to(ghost, { "--off": "0rem", duration: 1.2, ease: "expo.out" }, 0.1);
+        timeline.from(split.chars, {
+          yPercent: 115,
+          skewY: 3,
+          // Quicker and tighter than the press it replaced (0.78s / 16ms). The
+          // line should feel written, not set — you should not be able to watch
+          // it arrive letter by letter, only notice that it did.
+          duration: 0.66,
+          ease: "expo.out",
+          stagger: { each: 0.013 },
+        });
 
         cleanup = () => {
           timeline.kill();
           split.revert();
-          ghostSplit?.revert();
           face.removeAttribute("aria-hidden");
         };
       } catch {
@@ -115,9 +107,6 @@ export function Verdict({
       aria-label={text}
       style={{ color: level === "calm" ? undefined : STATUS_VAR[level] }}
     >
-      <span className="plate__ghost" aria-hidden="true">
-        {text}
-      </span>
       <span className="plate__face">{text}</span>
     </h1>
   );

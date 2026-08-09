@@ -2,6 +2,7 @@ import "server-only";
 
 import { getCourseTrends, type CourseTrend } from "@/lib/analytics/trend";
 import { createEstimator } from "@/lib/effort/estimate";
+import type { AssignmentSource } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { levelForDueDate, levelForGrade, maxLevel, type StatusLevel } from "@/lib/status";
 import { getActiveStruggles, type ActiveStruggle } from "@/lib/struggles/engine";
@@ -31,6 +32,13 @@ export interface ClassAssignment {
   level: StatusLevel;
   categoryName: string | null;
   fromSyllabus: boolean;
+  /**
+   * Where the row came from. `MANUAL` rows are the student's own tasks and are
+   * the only ones the UI may offer complete/delete controls for — Canvas owns
+   * `submitted` on its rows and would overwrite a local change on the next sync.
+   */
+  source: AssignmentSource;
+  difficulty: number | null;
   loggedMinutes: number | null;
 }
 
@@ -100,6 +108,8 @@ export async function getClassViews(): Promise<ClassView[]> {
         }),
         categoryName: assignment.gradeCategory?.name ?? null,
         fromSyllabus: assignment.source === "SYLLABUS",
+        source: assignment.source,
+        difficulty: assignment.difficulty,
         loggedMinutes: loggedMinutes > 0 ? loggedMinutes : null,
       };
     });

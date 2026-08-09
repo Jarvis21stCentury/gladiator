@@ -1,17 +1,25 @@
 import type { ReactNode } from "react";
 
-import type { StatusLevel } from "@/lib/status";
+import { STATUS_VAR, type StatusLevel } from "@/lib/status";
 
 import { Plate } from "./Plate";
-import { Rule } from "./Rule";
 
 /**
- * A section opening, hung on the margin.
+ * A section opening.
  *
- * The serial sits out in the rail column, the rubric and title hang off the
- * content edge, and a rule draws across above both. Order matters: the rule
- * arrives first and the type strikes into the space it just made, which is the
- * handoff that keeps sections from reading as a stack of unrelated blocks.
+ * One line: the title, and whatever control belongs to the section.
+ *
+ * `rubric`, `description` and `hint` are still accepted and deliberately not
+ * rendered. Every section carried a small-caps label that restated its own
+ * title ("Right now" / THE SHORT ANSWER), a sentence explaining what the
+ * section was, and sometimes a line explaining how to use it — three pieces of
+ * text above every block of content, none of which said anything the content
+ * did not. Read once, then noise forever.
+ *
+ * They are kept on the interface rather than deleted because all six pages pass
+ * them, and accepting-and-ignoring is far cheaper than editing every call site.
+ * If a section ever genuinely needs a sentence, render `description` again —
+ * but the bar is "this cannot be understood without it".
  *
  * `description` is not optional in practice. The first version of this page set
  * used titles alone — "The shape of it", "Every class at once" — which read
@@ -21,19 +29,19 @@ import { Rule } from "./Rule";
  */
 export function SectionHead({
   id,
-  serial,
-  rubric,
   title,
-  description,
-  hint,
   aside,
   level,
   size = "lg",
 }: {
   /** Anchor target for the page contents list. */
   id?: string;
-  /** Two digits. The through-line's counterpart in the margin. */
-  serial: string;
+  /**
+   * Two digits. Deliberately accepted and ignored: the margin rail this numbered
+   * is gone, but all six pages still pass it, and silently accepting it is far
+   * cheaper than editing every call site to delete a prop.
+   */
+  serial?: string;
   rubric: string;
   title: string;
   /** One plain sentence: what this section is. */
@@ -47,50 +55,29 @@ export function SectionHead({
   const inked = level && level !== "calm";
 
   return (
-    <header
-      id={id}
-      className="hang mb-[var(--block)] scroll-mt-20"
-    >
-      <Rule weight={inked ? "status" : "hair"} className="col-span-full mb-6" />
-
-      <p className="serial hidden lg:block" aria-hidden="true">
-        {serial}
-      </p>
-
-      <div>
-        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
-          <div>
-            <p className="rubric mb-3">
-              <span className="lg:hidden">{serial} · </span>
-              {rubric}
-            </p>
-            <Plate
-              as="h2"
-              className={`display ${size === "lg" ? "display--lg" : "display--md"}`}
-            >
-              {title}
-            </Plate>
-          </div>
-
-          {aside ? <div className="pb-1.5">{aside}</div> : null}
+    <header id={id} className="mb-3 scroll-mt-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+        <div className="flex items-baseline gap-2">
+          {/* The status tick replaces the ruled status bar that used to run the
+              full width above every section. Same information, no furniture. */}
+          {inked ? (
+            <span
+              className="h-3.5 w-[3px] rounded-sm"
+              style={{ background: STATUS_VAR[level] }}
+              aria-hidden="true"
+            />
+          ) : null}
+          <Plate
+            as="h2"
+            className={`display ${size === "lg" ? "display--lg" : "display--md"}`}
+          >
+            {title}
+          </Plate>
         </div>
 
-        {description ? (
-          <p className="prose mt-5 max-w-[56ch] text-ink-soft">{description}</p>
-        ) : null}
-
-        {/* Set as an instruction, not a caption. At rubric size this was 11px
-            of tracked-out grey and read as a footnote — which is the wrong
-            weight for the one line telling you the section is interactive. */}
-        {hint ? (
-          <p className="mt-3 flex items-baseline gap-2 text-[0.875rem] text-ink">
-            <span aria-hidden="true" className="text-ink-soft">
-              →
-            </span>
-            {hint}
-          </p>
-        ) : null}
+        {aside ? <div>{aside}</div> : null}
       </div>
+
     </header>
   );
 }

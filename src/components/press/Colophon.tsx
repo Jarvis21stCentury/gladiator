@@ -1,55 +1,21 @@
-import Link from "next/link";
-
-import { serial } from "@/lib/format";
-
-import { SECTIONS } from "./nav";
-
 /**
- * The colophon.
+ * The footer.
  *
- * A printed index of the five sections and what each one is for, closing every
- * page. It does the work a footer normally does badly: it is the only place the
- * whole product is described in one view, which matters in a tool where four of
- * the five pages are things you arrive at from somewhere else.
+ * This used to be a full index: all six sections, each with its name, a serial
+ * and a sentence describing it, in a three-column grid closing every page. That
+ * earned its space when navigation was a masthead that scrolled away — it was
+ * the only place the whole product was described in one view.
+ *
+ * A persistent sidebar made it redundant, and a redundant block of text at the
+ * bottom of every page is exactly the crowding this pass is removing. What is
+ * left is the one thing the sidebar does not say: what this is wired to.
  */
 export function Colophon() {
   return (
-    <footer className="band mt-[var(--section)]">
-      <div className="sheet py-[var(--block)]">
-        <div className="hang">
-          <p className="rubric hidden lg:block">Index</p>
-
-          <div>
-            <ul className="grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
-              {SECTIONS.map((section, index) => (
-                <li key={section.href}>
-                  <Link
-                    href={section.href}
-                    data-slip=""
-                    className="group block no-underline"
-                  >
-                    <span className="docket text-[0.625rem]">
-                      {serial(index + 1)}
-                    </span>
-                    <span className="display display--sm mt-1 block">
-                      {section.label}
-                    </span>
-                    <span className="rubric mt-1 block normal-case tracking-normal">
-                      {section.note}
-                    </span>
-                    <span className="mt-2 block h-px w-6 bg-rule transition-[width,background-color] duration-300 ease-[var(--strike)] group-hover:w-full group-hover:bg-ink" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-
-            <p className="docket mt-[var(--block)]">
-              Gladiator · single user, no login · Canvas + Google Calendar +
-              Prisma Postgres
-            </p>
-          </div>
-        </div>
-      </div>
+    <footer className="sheet mt-auto pb-[var(--block)] pt-[var(--section)]">
+      <p className="docket text-[0.6875rem] text-ink-faint">
+        Gladiator · Canvas + Google Calendar
+      </p>
     </footer>
   );
 }

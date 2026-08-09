@@ -1,8 +1,10 @@
 import Link from "next/link";
 
-import { togglePlanTask } from "@/app/actions";
 import { AutoSync } from "@/components/AutoSync";
+import { GoogleCalendarButton } from "@/components/GoogleCalendarButton";
 import { SyncButton } from "@/components/SyncButton";
+import { TaskForm } from "@/components/TaskForm";
+import { TaskRowActions } from "@/components/TaskRowActions";
 import { Docket, DocketRow } from "@/components/press/Docket";
 import { Figure } from "@/components/press/Figure";
 import { Mark } from "@/components/press/Mark";
@@ -10,6 +12,8 @@ import { Meter } from "@/components/press/Meter";
 import { PageHeader, type PageSection } from "@/components/press/PageHeader";
 import { Plate } from "@/components/press/Plate";
 import { PressureChart } from "@/components/press/PressureChart";
+import { NowPanel } from "@/components/press/NowPanel";
+import { Schedule } from "@/components/press/Schedule";
 import { Rule } from "@/components/press/Rule";
 import { SectionHead } from "@/components/press/SectionHead";
 import { Verdict } from "@/components/press/Verdict";
@@ -17,7 +21,7 @@ import { getCourseTrends } from "@/lib/analytics/trend";
 import { getDashboardData, type DueItem } from "@/lib/dashboard";
 import { minutesLabel } from "@/lib/format";
 import { getTodaysPlan } from "@/lib/planner/daily-plan";
-import { STATUS_VAR, levelForDueDate } from "@/lib/status";
+import { STATUS_VAR } from "@/lib/status";
 import { getSystemState } from "@/lib/system-state";
 
 /**
@@ -63,8 +67,18 @@ function DueBlock({
               title={item.title}
               meta={item.courseName}
               dueAt={item.dueAt}
+              assignmentId={item.id}
+              difficulty={item.difficulty}
               trailing={
                 item.pointsPossible !== null ? `${item.pointsPossible} pts` : null
+              }
+              /* Only your own tasks get controls — Canvas owns `submitted` on
+                 its own rows. The presence of the controls is also how a task
+                 you added tells itself apart from one Canvas sent. */
+              action={
+                item.source === "MANUAL" ? (
+                  <TaskRowActions id={item.id} done={false} title={item.title} />
+                ) : null
               }
             />
           ))}
@@ -104,7 +118,11 @@ export default async function FrontPage() {
     day: "numeric",
   });
 
-  const planDone = plan?.tasks.filter((task) => task.done).length ?? 0;
+  // Breaks and dinner are rows in the schedule but are not things you complete,
+  // so the progress count is over work blocks only.
+  const planWork = plan?.tasks.filter((task) => task.kind === "WORK") ?? [];
+  const planWorkCount = planWork.length;
+  const planDone = planWork.filter((task) => task.done).length;
   const hasFlags = system.struggles.length > 0;
 
   // Built from what's actually on the page — a contents list that offers a
@@ -149,6 +167,26 @@ export default async function FrontPage() {
         <div className="hang">
           <span aria-hidden="true" className="hidden lg:block" />
           <div>
+            {/* The first thing on the page, because it is the question the app
+                gets opened to answer. Dates are serialised to ISO because a
+                client component cannot receive a Date across the boundary. */}
+            {plan && plan.tasks.length > 0 ? (
+              <div className="mb-[var(--block)]">
+                <NowPanel
+                  blocks={plan.tasks.map((task) => ({
+                    id: task.id,
+                    kind: task.kind,
+                    title: task.title,
+                    reason: task.reason,
+                    startAt: task.startAt?.toISOString() ?? null,
+                    endAt: task.endAt?.toISOString() ?? null,
+                    done: task.done,
+                    courseName: task.assignment?.course.name ?? null,
+                  }))}
+                />
+              </div>
+            ) : null}
+
             <Verdict
               text={system.headline}
               level={system.level}
@@ -225,7 +263,10 @@ export default async function FrontPage() {
             rubric="Workload forecast"
             title="The next two weeks"
             description="Each day's work drawn against the hours you actually have free that day. Where a bar runs past its dashed line, the day doesn't fit."
-            hint="Scroll through the chart to read it day by day."
+            // The chart used to pin the page and scrub as you scrolled. It
+            // doesn't any more, so this said to do something that no longer
+            // works — point at a day instead.
+            hint="Point at a day to read it."
             level={system.level}
             aside={
               <Link href="/calendar" data-slip="" className="control">
@@ -339,12 +380,12 @@ export default async function FrontPage() {
           serial={hasFlags ? "04" : "03"}
           rubric="Daily plan"
           title="Today's plan"
-          description="Written each morning from what's due and how long things actually take you."
-          hint={plan ? "Tick items off as you finish them." : undefined}
+          description="Built each morning from what's due, how long things actually take you, and the hours you have free — with breaks and dinner already in it."
+          hint={plan ? "Tick work off as you finish it." : undefined}
           aside={
             plan ? (
               <span className="rubric">
-                {planDone} of {plan.tasks.length} done
+                {planDone} of {planWorkCount} done
               </span>
             ) : null
           }
@@ -361,78 +402,7 @@ export default async function FrontPage() {
               {plan.tasks.length === 0 ? (
                 <p className="docket">No tasks scheduled today.</p>
               ) : (
-                <Docket as="ol">
-                  {plan.tasks.map((task) => {
-                    const level = task.done
-                      ? "calm"
-                      : levelForDueDate(task.assignment?.dueAt ?? null);
-
-                    return (
-                      <li
-                        key={task.id}
-                        className="flex items-start gap-4 border-b border-rule/70 py-4 last:border-b-0"
-                        data-advance=""
-                        style={{ opacity: task.done ? 0.6 : 1 }}
-                      >
-                        {/* A server action, so the plan stays accurate with no
-                            client-side store. */}
-                        <form action={togglePlanTask} className="shrink-0 pt-[3px]">
-                          <input type="hidden" name="taskId" value={task.id} />
-                          <button
-                            type="submit"
-                            aria-label={
-                              task.done
-                                ? `Reopen ${task.title}`
-                                : `Mark ${task.title} done`
-                            }
-                            className="flex h-[15px] w-[15px] items-center justify-center border transition-colors duration-200"
-                            style={{
-                              borderColor: task.done
-                                ? "var(--ink)"
-                                : "var(--ink-faint)",
-                              background: task.done ? "var(--ink)" : "transparent",
-                              color: "var(--paper)",
-                            }}
-                          >
-                            {task.done ? (
-                              <span className="text-[0.5rem] leading-none">✓</span>
-                            ) : null}
-                          </button>
-                        </form>
-
-                        <div className="min-w-0 flex-1">
-                          <p
-                            className="text-[0.95rem] leading-snug"
-                            style={{
-                              color:
-                                level === "calm" ? undefined : STATUS_VAR[level],
-                              textDecoration: task.done
-                                ? "line-through"
-                                : undefined,
-                            }}
-                          >
-                            {task.title}
-                          </p>
-                          <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
-                            {task.reason}
-                          </p>
-                        </div>
-
-                        <span className="docket shrink-0 pt-1 text-right leading-snug">
-                          {task.estimatedMinutes}m
-                          {task.assignment ? (
-                            <>
-                              <br />
-                              <span className="opacity-65">
-                                {task.assignment.course.name}
-                              </span>
-                            </>
-                          ) : null}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </Docket>
+                <Schedule blocks={plan.tasks} />
               )}
 
               <p className="docket mt-8">
@@ -456,9 +426,15 @@ export default async function FrontPage() {
           serial={hasFlags ? "05" : "04"}
           rubric="Manifest"
           title="Everything due"
-          description="Every assignment you haven't submitted, grouped by how soon it lands."
+          description="Every assignment you haven't submitted, grouped by how soon it lands — plus anything you've added yourself."
           level={overdue.length > 0 ? "urgent" : undefined}
         />
+
+        {/* Adding comes before the lists on purpose: this is the one section
+            you arrive at wanting to *write* something rather than read it. */}
+        <div className="mb-[var(--block)]">
+          <TaskForm courses={courses.map((c) => ({ id: c.id, name: c.name }))} />
+        </div>
 
         <div className="hang">
           <span aria-hidden="true" className="hidden lg:block" />
@@ -550,8 +526,12 @@ export default async function FrontPage() {
           <span aria-hidden="true" className="hidden lg:block" />
           <div>
             <p className="rubric mb-4">Where this data comes from</p>
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+            <div className="flex flex-col gap-3">
               <SyncButton />
+              <GoogleCalendarButton />
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-4">
               <AutoSync
                 lastSyncedAt={lastCanvasSync?.startedAt.toISOString() ?? null}
                 staleAfterMinutes={STALE_AFTER_MINUTES}

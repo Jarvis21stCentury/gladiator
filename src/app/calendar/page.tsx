@@ -5,6 +5,7 @@ import { Figure } from "@/components/press/Figure";
 import { Mark } from "@/components/press/Mark";
 import { PageHeader } from "@/components/press/PageHeader";
 import { Rule } from "@/components/press/Rule";
+import { Schedule } from "@/components/press/Schedule";
 import { SectionHead } from "@/components/press/SectionHead";
 import {
   formatDayParam,
@@ -13,12 +14,13 @@ import {
   parseDayParam,
 } from "@/lib/calendar-view";
 import { minutesLabel } from "@/lib/format";
+import { getTodaysPlan } from "@/lib/planner/daily-plan";
 import { STATUS_VAR } from "@/lib/status";
 
 /**
  * The timetable.
  *
- * Composed as an almanac's weather table rather than as a chart: three ruled
+ * Composed as a ruled week table rather than as a chart: three ruled
  * staves of seven days, so the weekday columns line up and the fact that every
  * Thursday is brutal becomes visible on its own. Within each cell the day's work
  * is drawn as a bar across the cell and the hours actually free that day are a
@@ -39,7 +41,21 @@ export default async function TimetablePage({
   const params = await searchParams;
   const selected = parseDayParam(params.day);
 
-  const [rail, detail] = await Promise.all([getRail(), getDayDetail(selected)]);
+  const [rail, detail, plan] = await Promise.all([
+    getRail(),
+    getDayDetail(selected),
+    getTodaysPlan(),
+  ]);
+
+  /*
+   * Only today gets a schedule.
+   *
+   * "What's due" is a fact about any day; "here is your evening, hour by hour"
+   * only exists for the day a plan was written for. Showing yesterday's blocks
+   * against a Thursday would be actively misleading.
+   */
+  const isToday = detail.forecast?.offset === 0;
+  const schedule = isToday && plan && plan.tasks.length > 0 ? plan : null;
 
   const selectedKey = formatDayParam(selected);
   const commitments = detail.commitments.filter(
@@ -231,7 +247,7 @@ export default async function TimetablePage({
             </ol>
 
             <p className="rubric mt-6">
-              bar = how full the day is · tick = the whole day · vermilion = the
+              bar = how full the day is · tick = the whole day · red = the
               part that does not fit
             </p>
           </div>
@@ -306,6 +322,21 @@ export default async function TimetablePage({
               </div>
             </div>
 
+            {/* Today's actual plan, not just its deadlines. A day is what you
+                are going to *do*, and the due list alone never says that. */}
+            {schedule ? (
+              <div className="lg:col-span-12">
+                <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+                  <p className="rubric">Your plan for today</p>
+                  <p className="text-[0.75rem] text-ink-soft">
+                    {schedule.tasks.filter((task) => task.kind === "WORK").length}{" "}
+                    blocks of work, with breaks and dinner
+                  </p>
+                </div>
+                <Schedule blocks={schedule.tasks} />
+              </div>
+            ) : null}
+
             <div className="lg:col-span-4">
               <p className="rubric mb-3">Due this day</p>
               {detail.due.length === 0 ? (
@@ -320,6 +351,8 @@ export default async function TimetablePage({
                       dueAt={item.dueAt}
                       submitted={item.submitted}
                       level={item.level}
+                      assignmentId={item.id}
+                      difficulty={item.difficulty}
                       trailing={
                         item.pointsPossible !== null
                           ? `${item.pointsPossible} pts`
@@ -343,7 +376,6 @@ export default async function TimetablePage({
                     <li
                       key={commitment.id}
                       className="flex items-baseline justify-between gap-4 border-b border-rule/70 py-3 last:border-b-0"
-                      data-advance=""
                     >
                       <span className="text-[0.95rem] leading-snug">
                         {commitment.title}

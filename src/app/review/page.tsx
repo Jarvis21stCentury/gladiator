@@ -76,7 +76,6 @@ export default async function ReviewIndexPage() {
                   <article
                     key={deck.courseId}
                     className="border-t border-rule py-8 first:border-t-0 first:pt-0"
-                    data-advance=""
                   >
                     <div className="grid gap-x-12 gap-y-6 lg:grid-cols-12">
                       <div className="lg:col-span-6">
@@ -154,7 +153,6 @@ export default async function ReviewIndexPage() {
                   <div
                     key={deck.courseId}
                     className="flex flex-wrap items-center justify-between gap-4 border-t border-rule py-5 first:border-t-0 first:pt-0"
-                    data-advance=""
                   >
                     <div>
                       <p className="text-[1.05rem]">{deck.courseName}</p>

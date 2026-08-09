@@ -2,6 +2,8 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 
+import { difficultyFactor } from "./difficulty";
+
 /**
  * Effort estimation and the calibration engine (FEATURES.md Tier 2).
  *
@@ -25,10 +27,14 @@ const MIN_LOGS_FOR_BIAS = 3;
 const MIN_BIAS = 0.5;
 const MAX_BIAS = 2.5;
 
+export { DIFFICULTY_LABEL, difficultyFactor } from "./difficulty";
+
 export type EffortSource =
   | "logged-assignment"
   | "logged-course"
   | "calibrated"
+  /** Adjusted by the student's own difficulty rating. */
+  | "rated"
   | "default";
 
 export interface EffortEstimate {
@@ -41,7 +47,10 @@ export interface AssignmentLike {
   title: string;
   courseId: string;
   pointsPossible: number | null;
+  /** The student's own 1–5 rating, or null if they never gave one. */
+  difficulty?: number | null;
 }
+
 
 /**
  * Fallback estimate for an assignment with no logged history. Points are the
@@ -152,6 +161,12 @@ export interface Estimator {
  *   1. Time logged against this exact assignment.
  *   2. Minutes-per-point logged in this class.
  *   3. The title/points heuristic, scaled by the personal bias factor.
+ *
+ * A self-reported difficulty multiplies 2 and 3, and deliberately **not** 1.
+ * Once you have actually timed yourself on something, that measurement beats
+ * your opinion of how hard it was going to be — applying both would count the
+ * same difficulty twice, since the reason it took 90 minutes is already in the
+ * 90 minutes.
  */
 export async function createEstimator(): Promise<Estimator> {
   const [calibration, loggedByAssignment] = await Promise.all([
@@ -171,16 +186,22 @@ export async function createEstimator(): Promise<Estimator> {
   return {
     calibration,
     estimate(assignment) {
+      // Measured time wins outright, and is *not* scaled by difficulty: the
+      // difficulty is already baked into how long it actually took.
       const logged = exact.get(assignment.id);
       if (logged !== undefined) {
         return { minutes: clamp(logged), source: "logged-assignment" };
       }
 
+      const rated = difficultyFactor(assignment.difficulty);
+      const source: EffortSource =
+        assignment.difficulty != null ? "rated" : "default";
+
       const rate = calibration.minutesPerPointByCourse.get(assignment.courseId);
       if (rate !== undefined && assignment.pointsPossible) {
         return {
-          minutes: clamp(rate * assignment.pointsPossible),
-          source: "logged-course",
+          minutes: clamp(rate * assignment.pointsPossible * rated),
+          source: assignment.difficulty != null ? "rated" : "logged-course",
         };
       }
 
@@ -191,12 +212,12 @@ export async function createEstimator(): Promise<Estimator> {
 
       if (calibration.applied) {
         return {
-          minutes: clamp(heuristic * calibration.biasFactor),
-          source: "calibrated",
+          minutes: clamp(heuristic * calibration.biasFactor * rated),
+          source: assignment.difficulty != null ? "rated" : "calibrated",
         };
       }
 
-      return { minutes: heuristic, source: "default" };
+      return { minutes: clamp(heuristic * rated), source };
     },
   };
 }
@@ -206,5 +227,6 @@ export const EFFORT_SOURCE_LABEL: Record<EffortSource, string> = {
   "logged-assignment": "from logged time on this assignment",
   "logged-course": "extrapolated from logged time in this class",
   calibrated: "heuristic, adjusted to your logged pace",
+  rated: "adjusted by how hard you said this is",
   default: "no logged history, heuristic",
 };

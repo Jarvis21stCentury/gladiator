@@ -49,7 +49,7 @@ export function htmlToText(html: string): string {
 export async function ingestCanvasContent(
   day: Date = schoolDay(),
 ): Promise<CanvasIngestResult> {
-  const config = getCanvasConfig();
+  const config = await getCanvasConfig();
   const warnings: string[] = [];
 
   if (!hasApiCredentials(config)) {

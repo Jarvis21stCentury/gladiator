@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getGoogleConfig } from "@/lib/google/config";
+import { getGoogleConfig, saveGoogleRefreshToken } from "@/lib/google/config";
 import { exchangeCodeForTokens } from "@/lib/google/oauth";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const tokens = await exchangeCodeForTokens(getGoogleConfig(), code);
+    const tokens = await exchangeCodeForTokens(await getGoogleConfig(), code);
 
     if (!tokens.refresh_token) {
       return page(
@@ -54,19 +54,20 @@ export async function GET(request: Request) {
       );
     }
 
-    // Shown once, then it lives in the environment — there is no user table to
-    // store it in, by design (ARCHITECTURE.md).
-    const response = page(
-      "Google Calendar connected",
-      `<h1>Google Calendar connected</h1>
-       <p>Add this to <code>.env</code> and to the Vercel project's environment
-       variables, then restart:</p>
-       <pre style="background:#111;color:#eee;padding:1rem;overflow-x:auto;border-radius:6px">GOOGLE_REFRESH_TOKEN="${tokens.refresh_token}"</pre>
-       <p>Scope granted: <code>${tokens.scope ?? "unknown"}</code></p>
-       <p>This token is shown once and is not stored anywhere by the app.</p>`,
-      200,
-    );
+    /*
+     * Stored, not displayed.
+     *
+     * This page used to print the refresh token in a <pre> and ask you to paste
+     * it into `.env` and restart the server — a developer handoff standing in
+     * the middle of a student's setup. It now goes straight into the `Setting`
+     * table and the browser is sent back to the app connected.
+     *
+     * The token is never rendered. A secret echoed into HTML lands in the
+     * browser's history, its cache, and any screenshot of the moment it worked.
+     */
+    await saveGoogleRefreshToken(tokens.refresh_token);
 
+    const response = NextResponse.redirect(new URL("/?google=connected", request.url));
     response.cookies.delete("google_oauth_state");
     return response;
   } catch (cause) {

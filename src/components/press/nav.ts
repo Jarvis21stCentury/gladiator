@@ -1,5 +1,5 @@
 /**
- * The five sections of the almanac, in one list.
+ * The five sections of the workbook, in one list.
  *
  * The nameplate index and the footer colophon both render from this — two navs
  * that can disagree about what exists is a bug waiting to happen.
@@ -18,6 +18,7 @@ export const SECTIONS: Section[] = [
   { href: "/digest", label: "Digest", note: "tonight's notes" },
   { href: "/review", label: "Review", note: "flashcards, when they're due" },
   { href: "/retro", label: "Retro", note: "the week, debriefed" },
+  { href: "/routine", label: "Routine", note: "when you're actually free" },
 ];
 
 /** How long half of a sheet slip runs. Must match the value in `Slip`. */

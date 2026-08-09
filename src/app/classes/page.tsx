@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/press/PageHeader";
 import { Plate } from "@/components/press/Plate";
 import { Rule } from "@/components/press/Rule";
 import { SectionHead } from "@/components/press/SectionHead";
+import { TaskRowActions } from "@/components/TaskRowActions";
 import { Trace } from "@/components/press/Trace";
 import { getClassViews, type ClassView } from "@/lib/classes";
 import { getCalibration } from "@/lib/effort/estimate";
@@ -116,7 +117,6 @@ function WhatIf({ result }: { result: WhatIfResult }) {
                * own line and the figures sit underneath it.
                */
               className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-rule/70 py-2.5 last:border-b-0"
-              data-advance=""
             >
               <span className="w-full min-w-0 text-[0.95rem] sm:w-auto sm:flex-1">
                 {category.name}
@@ -248,7 +248,6 @@ function Dossier({
               <div
                 key={struggle.id}
                 className="flex gap-4"
-                data-advance=""
                 style={
                   { "--status": STATUS_VAR[struggle.level] } as React.CSSProperties
                 }
@@ -314,6 +313,8 @@ function Dossier({
                     }
                     dueAt={assignment.dueAt}
                     level={assignment.level}
+                    assignmentId={assignment.id}
+                    difficulty={assignment.difficulty}
                     trailing={
                       <>
                         {assignment.pointsPossible !== null
@@ -321,6 +322,15 @@ function Dossier({
                           : "—"}{" "}
                         · ~{assignment.estimatedMinutes}m
                       </>
+                    }
+                    action={
+                      assignment.source === "MANUAL" ? (
+                        <TaskRowActions
+                          id={assignment.id}
+                          done={assignment.submitted}
+                          title={assignment.title}
+                        />
+                      ) : null
                     }
                   />
                 ))}
@@ -344,6 +354,20 @@ function Dossier({
                           : assignment.submitted
                             ? "submitted"
                             : "—"
+                      }
+                      /* The class dossier is where a completed task can be
+                         un-ticked or deleted. Without this, marking one done on
+                         the front page was a one-way trip: it vanished from
+                         every list that filters on `submitted: false` and there
+                         was nowhere left to change your mind. */
+                      action={
+                        assignment.source === "MANUAL" ? (
+                          <TaskRowActions
+                            id={assignment.id}
+                            done={assignment.submitted}
+                            title={assignment.title}
+                          />
+                        ) : null
                       }
                     />
                   ))}

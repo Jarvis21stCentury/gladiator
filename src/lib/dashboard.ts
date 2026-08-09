@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { AssignmentSource } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -30,6 +31,14 @@ export interface DueItem {
   dueAt: Date | null;
   pointsPossible: number | null;
   courseName: string;
+  /**
+   * Where the row came from. The UI needs it to decide whether to offer the
+   * complete and delete controls: only `MANUAL` rows are yours to change, since
+   * Canvas owns `submitted` on its own and would overwrite it on the next sync.
+   */
+  source: AssignmentSource;
+  /** The student's own 1–5 rating, or null. */
+  difficulty: number | null;
 }
 
 async function findDue(from: Date, to?: Date): Promise<DueItem[]> {
@@ -51,6 +60,8 @@ async function findDue(from: Date, to?: Date): Promise<DueItem[]> {
     dueAt: assignment.dueAt,
     pointsPossible: assignment.pointsPossible,
     courseName: assignment.course.name,
+    source: assignment.source,
+    difficulty: assignment.difficulty,
   }));
 }
 
