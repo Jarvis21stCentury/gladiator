@@ -34,6 +34,8 @@ export interface HacSyncResult {
   gradesUpdated: number;
   assignmentsImported: number;
   assignmentsUpdated: number;
+  /** Canvas enrolments hidden because HAC does not list them as classes. */
+  coursesHidden: number;
   /** True when HAC showed no averages at all — normal early in a term. */
   noGradesPosted: boolean;
   message: string;
@@ -46,6 +48,7 @@ const failure = (message: string): HacSyncResult => ({
   gradesUpdated: 0,
   assignmentsImported: 0,
   assignmentsUpdated: 0,
+  coursesHidden: 0,
   noGradesPosted: false,
   message,
 });
@@ -73,7 +76,7 @@ export async function runHacSync(): Promise<HacSyncResult> {
   }
 
   const existing = await prisma.course.findMany({
-    select: { id: true, name: true },
+    select: { id: true, name: true, canvasId: true },
   });
 
   // Normalised on both sides, so a HAC class lands on the Canvas course that
@@ -86,6 +89,9 @@ export async function runHacSync(): Promise<HacSyncResult> {
   const today = new Date(
     Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()),
   );
+
+  /** Every course HAC actually named, so the rest can be put away. */
+  const inHac = new Set<string>();
 
   let matched = 0;
   let created = 0;
@@ -105,6 +111,8 @@ export async function runHacSync(): Promise<HacSyncResult> {
       byName.set(key, courseId);
       created += 1;
     }
+
+    inHac.add(courseId);
 
     /*
      * A blank average is a real state, not a failure: HAC hides averages when
@@ -169,6 +177,45 @@ export async function runHacSync(): Promise<HacSyncResult> {
     }
   }
 
+  /*
+   * HAC decides which classes are real.
+   *
+   * A Canvas enrolment is not a class. Homeroom, DECA, a district-wide
+   * orientation course and the school's activities page all arrive as courses,
+   * and so does last year's version of a class the student has since moved on
+   * from. HAC lists exactly the classes on the timetable, so anything Canvas
+   * offers that HAC does not name is put away.
+   *
+   * Hidden, never deleted: the next Canvas sync would recreate the row anyway,
+   * and hiding is reversible from the Classes page.
+   *
+   * Two guards. Courses added by hand are left alone — HAC has no opinion about
+   * a class the student created themselves. And nothing is hidden unless HAC
+   * returned a plausible timetable, because a partial parse that found one
+   * class must not sweep everything else out of sight.
+   */
+  let hidden = 0;
+
+  if (courses.length >= 3) {
+    const stale = existing.filter(
+      (course) => course.canvasId !== null && !inHac.has(course.id),
+    );
+
+    if (stale.length > 0) {
+      const result = await prisma.course.updateMany({
+        where: { id: { in: stale.map((course) => course.id) }, hidden: false },
+        data: { hidden: true },
+      });
+      hidden = result.count;
+    }
+
+    // Anything HAC *does* list belongs on screen, even if it was hidden before.
+    await prisma.course.updateMany({
+      where: { id: { in: [...inHac] }, hidden: true },
+      data: { hidden: false },
+    });
+  }
+
   const noGradesPosted = gradesUpdated === 0;
 
   const parts = [
@@ -176,6 +223,9 @@ export async function runHacSync(): Promise<HacSyncResult> {
     created > 0 ? `${created} new` : null,
     imported > 0 ? `${imported} assignment${imported === 1 ? "" : "s"} imported` : null,
     updated > 0 ? `${updated} updated` : null,
+    hidden > 0
+      ? `${hidden} non-class enrolment${hidden === 1 ? "" : "s"} hidden`
+      : null,
     gradesUpdated > 0
       ? `${gradesUpdated} grade${gradesUpdated === 1 ? "" : "s"}`
       : "no grades posted yet",
@@ -188,6 +238,7 @@ export async function runHacSync(): Promise<HacSyncResult> {
     gradesUpdated,
     assignmentsImported: imported,
     assignmentsUpdated: updated,
+    coursesHidden: hidden,
     noGradesPosted,
     message: parts.join(" · "),
   };
