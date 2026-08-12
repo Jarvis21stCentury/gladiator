@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { AutoSync } from "@/components/AutoSync";
 import { GoogleCalendarButton } from "@/components/GoogleCalendarButton";
+import { HacButton } from "@/components/HacButton";
 import { PlanGenerateButton } from "@/components/PlanGenerateButton";
 import { SyncButton } from "@/components/SyncButton";
 import { TaskForm } from "@/components/TaskForm";
@@ -535,6 +536,7 @@ export default async function FrontPage() {
             <p className="rubric mb-4">Where this data comes from</p>
             <div className="flex flex-col gap-3">
               <SyncButton />
+              <HacButton />
               <GoogleCalendarButton />
             </div>
 

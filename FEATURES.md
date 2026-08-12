@@ -71,6 +71,26 @@ The fallback window is kept for anyone who has not set one up, so nothing regres
 > and afternoon of the one day with the most free time in it. Caught by testing
 > the invariants against six shaped days, not by reading the code.
 
+### Home Access Center
+
+HAC has **no API**. Signing in means doing what a browser does — GET the login page, carry its anti-forgery token and cookies into a POST, follow the session — and it needs the student's **real district password**, not a revocable token. `ARCHITECTURE.md` flagged this as the one integration to build last and only after the tradeoff was explicitly re-confirmed. It was.
+
+What that means, stated plainly because a student should be able to decide with it in front of them:
+
+- It is not a scoped token. There is no button anywhere that turns one copy of it off.
+- It is stored **encrypted** (AES-256-GCM, key derived from `CREDENTIAL_SECRET`). That is not a vault: the server must be able to sign in as you, so it must be able to decrypt, so the key is on the same machine. What it defends against is the realistic failure — a database dump or a stray backup putting a working school password in plain sight.
+- **Without `CREDENTIAL_SECRET` set, connecting is refused** rather than falling back to plaintext, and refused *before* the password is transmitted anywhere.
+- Disconnecting deletes it.
+
+Two behaviours matter more here than elsewhere:
+
+- **A failed HAC login returns HTTP 200 with the login form again.** Without detecting that, a wrong password is indistinguishable from a student with no classes, and the app would report "0 courses found". The response is checked for the login form before anything is parsed.
+- **A rejected password is never retried.** School portals lock accounts, and a background job re-presenting a wrong password would lock the student out of the system they actually need.
+
+Grades match existing classes by name, with the district course code stripped, so "1234 - AP Calculus AB" from HAC lines up with "AP Calculus AB" from Canvas. A class only HAC knows about is created with a null `canvasId`, so a Canvas sync leaves it alone. A class with no posted percent is reported, not written as a zero.
+
+**The parser is the part most likely to need adjusting.** HAC is not one product — it is eSchoolPlus rendered by whatever version and theme a district runs. Parsing is deliberately isolated in `lib/hac/parse.ts`, with no network or storage in it, so it can be corrected against real saved HTML without touching login or credentials.
+
 ### Connecting Canvas
 
 Credentials come from the `Setting` table first, then the matching env var. Env-only was fine for whoever deployed this and useless for the student using it: connecting Canvas meant editing a file and restarting a server.
