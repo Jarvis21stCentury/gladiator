@@ -8,6 +8,44 @@ Personal single-user school command center.
 - `MOTION.md` — the motion language and the named patterns the UI is built from.
   Read it before adding any animation.
 
+## Running it
+
+You need Node and a running Postgres. On macOS with Homebrew, `brew services start postgresql@16` — it registers a LaunchAgent, so it comes back on its own after a reboot and your data is on disk, not in memory.
+
+```bash
+npm install
+npx prisma migrate deploy    # or `npm run db:migrate` while developing
+npm run dev                  # http://localhost:3000
+```
+
+**Everything you enter is saved in Postgres** — tasks, your routine, difficulty ratings, effort logs, flashcard progress, and your Canvas/Google credentials. Closing the browser, stopping `npm run dev`, or rebooting loses none of it. Only the dev server is disposable.
+
+### First run
+
+1. **Set your routine** (`/routine`) — when you wake and sleep, school hours, practice, shifts. This is what free time is computed from; without it the planner assumes 4:00–9:30 PM every day. There's a "start from a typical week" button so you're editing rather than authoring.
+2. **Connect Canvas** — the *Connect Canvas* button on the front page. Paste your school's Canvas address and an access token (Canvas → Account → Settings → New Access Token). The token is checked before it's stored and never sent back to the browser.
+3. **Clear the demo data** once your real classes have synced:
+   ```bash
+   npm run db:clear-demo -- --dry   # show what would go
+   npm run db:clear-demo            # actually remove it
+   ```
+   Demo courses are the six invented ones with negative Canvas ids. Your routine, credentials and anything you added yourself are left alone.
+4. **Add an LLM key** if you want the written features — see below.
+5. **Press "Make today's plan"** in Today's plan.
+
+### What needs which key
+
+| Feature | Needs |
+|---|---|
+| Tasks, routine, difficulty, forecast, timetable, grades, what-if | nothing |
+| Assignments, grades, due dates | Canvas — connect in the app |
+| Due dates in your calendar, with reminders | Google — needs `GOOGLE_CLIENT_ID`/`SECRET`/`REDIRECT_URI` in `.env` first (a Google Cloud project; a student can't create these), then connect in the app |
+| Daily plan narrative, digest, retro, flashcard writing, syllabus parsing | `LLM_PROVIDER` + `LLM_API_KEY` |
+
+### About the daily plan
+
+On a deployment the plan is written by a cron job (`vercel.json`, 11:15 UTC). **Nothing triggers that when you run locally**, so use the **Make today's plan** button on the front page. It's also the right thing to press after adding tasks, rating difficulty or changing your routine — the morning's plan doesn't know about any of that until it's rebuilt. Regenerating replaces today's plan rather than adding a second one.
+
 ## Status
 
 **Tier 1 and Tier 2 of `FEATURES.md` are built, and so is the visual identity.** All five

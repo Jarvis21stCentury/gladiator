@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { AutoSync } from "@/components/AutoSync";
 import { GoogleCalendarButton } from "@/components/GoogleCalendarButton";
+import { PlanGenerateButton } from "@/components/PlanGenerateButton";
 import { SyncButton } from "@/components/SyncButton";
 import { TaskForm } from "@/components/TaskForm";
 import { TaskRowActions } from "@/components/TaskRowActions";
@@ -405,16 +406,22 @@ export default async function FrontPage() {
                 <Schedule blocks={plan.tasks} />
               )}
 
-              <p className="docket mt-8">
+              <div className="mt-6">
+                <PlanGenerateButton hasPlan />
+              </div>
+
+              <p className="docket mt-4">
                 Written by {plan.provider}/{plan.model} ·{" "}
                 {plan.updatedAt.toLocaleString()}
               </p>
             </div>
           ) : (
-            <p className="prose text-ink-soft">
-              Nothing yet. The plan is written each morning by the scheduled job,
-              so it appears once that has run for today.
-            </p>
+            <div>
+              <p className="prose mb-4 text-ink-soft">
+                No plan for today yet.
+              </p>
+              <PlanGenerateButton hasPlan={false} />
+            </div>
           )}
         </div>
       </section>
