@@ -606,3 +606,31 @@ export async function setCourseGrade(
 
   return { ok: true, message: `${course.name} set to ${percent}%.` };
 }
+
+/**
+ * Hide a class from every list, or bring it back.
+ *
+ * Not a delete: the next Canvas sync would simply recreate it. Hiding is the
+ * honest operation for "this is an enrolment, not a class" — homeroom, a club,
+ * a district orientation course.
+ */
+export async function toggleCourseHidden(formData: FormData): Promise<void> {
+  const id = String(formData.get("courseId") ?? "");
+  if (!id) return;
+
+  const course = await prisma.course.findUnique({
+    where: { id },
+    select: { id: true, hidden: true },
+  });
+
+  if (!course) return;
+
+  await prisma.course.update({
+    where: { id: course.id },
+    data: { hidden: !course.hidden },
+  });
+
+  revalidatePath("/classes");
+  revalidatePath("/");
+  revalidatePath("/calendar");
+}

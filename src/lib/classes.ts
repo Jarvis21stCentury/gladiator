@@ -61,6 +61,17 @@ export interface ClassView {
   minutesLogged: number;
 }
 
+/** Classes that have been hidden, so the page can offer them back. */
+export async function getHiddenCourses(): Promise<
+  { id: string; name: string }[]
+> {
+  return prisma.course.findMany({
+    where: { hidden: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+}
+
 export async function getClassViews(): Promise<ClassView[]> {
   const now = new Date();
   const since = new Date(now);
@@ -68,6 +79,8 @@ export async function getClassViews(): Promise<ClassView[]> {
 
   const [courses, trends, struggles, estimator] = await Promise.all([
     prisma.course.findMany({
+      // Hidden classes are enrolments, not classes — see Course.hidden.
+      where: { hidden: false },
       orderBy: { name: "asc" },
       include: {
         assignments: {

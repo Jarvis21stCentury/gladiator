@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { toggleCourseHidden } from "@/app/actions";
+
 import { EffortLogForm } from "@/components/EffortLogForm";
 import { CardGenerateButton } from "@/components/review/CardGenerateButton";
 import { SyllabusUpload } from "@/components/SyllabusUpload";
@@ -15,7 +17,7 @@ import { CourseForm } from "@/components/CourseForm";
 import { GradeEditor } from "@/components/GradeEditor";
 import { TaskRowActions } from "@/components/TaskRowActions";
 import { Trace } from "@/components/press/Trace";
-import { getClassViews, type ClassView } from "@/lib/classes";
+import { getHiddenCourses, getClassViews, type ClassView } from "@/lib/classes";
 import { getCalibration } from "@/lib/effort/estimate";
 import { getDeckSummaries, type DeckSummary } from "@/lib/flashcards/deck";
 import { gradeLabel, serial } from "@/lib/format";
@@ -221,13 +223,23 @@ function Dossier({
               {gradeLabel(view.currentGradePercent)}
             </p>
             <p className="rubric mt-2">current grade</p>
-            <div className="mt-2 flex lg:justify-end">
+            <div className="mt-2 flex items-center gap-3 lg:justify-end">
               <GradeEditor
                 courseId={view.id}
                 courseName={view.name}
                 percent={view.currentGradePercent}
                 fromCanvas={view.fromCanvas}
               />
+              {/* Not a delete: the next sync would recreate it. */}
+              <form action={toggleCourseHidden}>
+                <input type="hidden" name="courseId" value={view.id} />
+                <button
+                  type="submit"
+                  className="text-[0.75rem] text-ink-soft underline underline-offset-2 hover:text-[color:var(--flare)]"
+                >
+                  Hide
+                </button>
+              </form>
             </div>
             {trend ? (
               <p
@@ -492,10 +504,11 @@ export default async function ClassesPage({
       ? parsed
       : DEFAULT_TARGET;
 
-  const [views, calibration, decks] = await Promise.all([
+  const [views, calibration, decks, hidden] = await Promise.all([
     getClassViews(),
     getCalibration(),
     getDeckSummaries(),
+    getHiddenCourses(),
   ]);
 
   const whatIfs = await Promise.all(
@@ -569,6 +582,24 @@ export default async function ClassesPage({
               <div className="mb-[var(--block)]">
                 <CourseForm />
               </div>
+
+              {hidden.length > 0 ? (
+                <div className="mb-[var(--block)] flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <span className="rubric">Hidden</span>
+                  {hidden.map((course) => (
+                    <form key={course.id} action={toggleCourseHidden}>
+                      <input type="hidden" name="courseId" value={course.id} />
+                      <button
+                        type="submit"
+                        title="Show this class again"
+                        className="rounded border border-rule px-2 py-0.5 text-[0.75rem] text-ink-soft hover:border-[color:var(--accent)] hover:text-accent"
+                      >
+                        {course.name} +
+                      </button>
+                    </form>
+                  ))}
+                </div>
+              ) : null}
 
               <div className="hang">
                 <span aria-hidden="true" className="hidden lg:block" />

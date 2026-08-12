@@ -109,6 +109,7 @@ export async function getWorkloadForecast(
       where: {
         submitted: false,
         dueAt: { gte: today, lt: horizon },
+        course: { hidden: false },
       },
       orderBy: { dueAt: "asc" },
       include: { course: { select: { id: true, name: true } } },

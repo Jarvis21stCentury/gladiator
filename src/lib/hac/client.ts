@@ -67,6 +67,42 @@ export interface HacCredentials {
   password: string;
 }
 
+/** Every hidden input on the page, which is most of an ASP.NET postback. */
+function hiddenFields(html: string): URLSearchParams {
+  const fields = new URLSearchParams();
+
+  for (const input of html.matchAll(/<input[^>]*type=["\']hidden["\'][^>]*>/gi)) {
+    const name = input[0].match(/name=["\']([^"\']+)["\']/i)?.[1];
+    const value = input[0].match(/value=["\']([^"\']*)["\']/i)?.[1] ?? "";
+    if (name) fields.set(name, decodeEntities(value));
+  }
+
+  return fields;
+}
+
+/** ASP.NET encodes __VIEWSTATE into HTML attributes; it must go back raw. */
+function decodeEntities(value: string): string {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+/** The marking periods offered by the Report Card Run dropdown, real ones only. */
+function reportCardRuns(html: string): string[] {
+  const select = html.match(
+    /<select[^>]*name="ctl00\$plnMain\$ddlReportCardRuns"[^>]*>([\s\S]*?)<\/select>/i,
+  );
+  if (!select) return [];
+
+  return [...select[1].matchAll(/<option[^>]*value="([^"]*)"/gi)]
+    .map((option) => option[1])
+    // "ALL" is the default *and* the reason averages are hidden — see below.
+    .filter((value) => value && value.toUpperCase() !== "ALL");
+}
+
 /** Pull an ASP.NET hidden input out of a form. */
 function hiddenField(html: string, name: string): string | null {
   const pattern = new RegExp(
@@ -177,33 +213,66 @@ export async function fetchHacGradesHtml(
     );
   }
 
-  /*
-   * Two grade pages, because districts expose different ones. Assignments
-   * carries running averages; Report Card carries posted marks. Both are tried
-   * and the results are merged upstream, so a portal offering either works.
-   */
-  const pages = [
-    `${base}/HomeAccess/Content/Student/Assignments.aspx`,
-    `${base}/HomeAccess/Content/Student/ReportCards.aspx`,
-  ];
+  const assignmentsUrl = `${base}/HomeAccess/Content/Student/Assignments.aspx`;
+  const { response: firstResponse, body: firstBody } = await request(
+    assignmentsUrl,
+    jar,
+    { method: "GET" },
+  );
 
-  const collected: string[] = [];
-
-  for (const page of pages) {
-    try {
-      const { response, body } = await request(page, jar, { method: "GET" });
-      if (response.ok && !looksLikeLoginPage(body)) collected.push(body);
-    } catch {
-      // One missing view is normal; only both failing is a problem.
-    }
-  }
-
-  if (collected.length === 0) {
+  if (!firstResponse.ok || looksLikeLoginPage(firstBody)) {
     throw new HacError(
-      "Signed in, but neither grade page could be read. Your district may use a different HAC layout.",
+      "Signed in, but the assignments page could not be read. Your district may use a different HAC layout.",
       "shape",
     );
   }
 
-  return collected.join("\n");
+  /*
+   * Pick a marking period, or there are no averages at all.
+   *
+   * HAC defaults the Report Card Run dropdown to "(All Runs)", and in that mode
+   * it refuses to compute averages — the page literally carries the message
+   * "Averages cannot be displayed when Report Card Run is set to (All Runs)."
+   * So the first fetch returns every class with a blank grade, which is exactly
+   * what it did: eight courses, no percentages.
+   *
+   * The fix is the postback a student performs by hand: select a specific run.
+   * Runs are tried newest-first and the first one that actually yields a
+   * percentage wins, so this works in August (run 1) and in April (run 4)
+   * without being told which.
+   */
+  const runs = reportCardRuns(firstBody);
+
+  for (const run of [...runs].reverse()) {
+    const form = hiddenFields(firstBody);
+
+    form.set("__EVENTTARGET", "ctl00$plnMain$ddlReportCardRuns");
+    form.set("__EVENTARGUMENT", "");
+    form.set("ctl00$plnMain$ddlReportCardRuns", run);
+    form.set("ctl00$plnMain$ddlClasses", "ALL");
+    form.set("ctl00$plnMain$ddlCompetencies", "ALL");
+    form.set("ctl00$plnMain$ddlOrderBy", "Class");
+
+    try {
+      const { response, body } = await request(assignmentsUrl, jar, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Referer: assignmentsUrl,
+        },
+        body: form.toString(),
+      });
+
+      if (!response.ok || looksLikeLoginPage(body)) continue;
+
+      // Averages present? Then this is the run the student is actually in.
+      if (/\d{1,3}(?:\.\d+)?\s*%/.test(body)) return body;
+    } catch {
+      // A run that will not load is not fatal; try the next one.
+    }
+  }
+
+  // No run produced averages — return the plain page so at least the class list
+  // is right, and let the caller report that grades are unavailable.
+  return firstBody;
 }

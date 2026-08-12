@@ -83,7 +83,7 @@ export async function getDayDetail(date: Date): Promise<DayDetail> {
 
   const [assignments, blocks, forecast] = await Promise.all([
     prisma.assignment.findMany({
-      where: { dueAt: { gte: dayStart, lt: dayEnd } },
+      where: { dueAt: { gte: dayStart, lt: dayEnd }, course: { hidden: false } },
       orderBy: { dueAt: "asc" },
       include: { course: { select: { name: true } } },
     }),

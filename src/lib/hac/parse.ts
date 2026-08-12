@@ -1,34 +1,47 @@
 /**
- * Reading grades out of a Home Access Center page.
+ * Reading a Home Access Center page.
  *
- * Pure string work, no `server-only`, no network — which is the point. This is
- * the part of the HAC integration most likely to be wrong, because HAC is not
- * one product: it is eSchoolPlus rendered by whatever version and theme a
- * district happens to run, and the markup differs between them. Keeping the
- * parsing separate from the fetching means it can be tested against real saved
- * HTML and corrected without touching login, cookies or storage.
+ * Pure string work, no `server-only`, no network — which is what let this be
+ * fixed against a real saved page without touching login, cookies or storage.
  *
- * ## Why regex and not a DOM parser
+ * ## What the page actually looks like
  *
- * No HTML parser is in the dependency tree, and adding one to read two fields
- * off one page is not worth it. These patterns are deliberately loose — they
- * look for the *shape* of a course row rather than exact class names — because
- * a strict selector against a district theme nobody here has seen would be
- * false precision.
+ * The Assignments view is a list of *class blocks*. Each block is a
+ * `div.AssignmentClass` whose header anchor carries the class name, and inside
+ * it is a table of that class's assignments:
  *
- * If this returns nothing for your portal, that is expected to be a
- * one-adjustment problem: save the grades page as HTML, look at what a course
- * row actually is, and add a pattern here.
+ *     Date Due | Date Assigned | Assignment | Category | Score | Total Points
+ *
+ * That structure is the whole reason the first version produced nonsense. It
+ * scanned every `<table>` on the page for course-shaped rows, so each
+ * *assignment* became a course: "Unit 1 Vocabulary", "Clicker Game Challenge",
+ * even the header cell "Date Due" — 28 invented classes, each with a grade of
+ * 1 scraped out of a points column. Courses now come from class headers only,
+ * and tables are only ever read as assignments.
  */
 
-export interface HacCourse {
-  /** As printed in HAC, e.g. "AP Calculus AB" or "1234 - Algebra II". */
-  name: string;
-  /** The percent, when the page shows one. */
-  percent: number | null;
+export interface HacAssignment {
+  title: string;
+  dueAt: Date | null;
+  category: string | null;
+  /** Points earned, when the work has been marked. */
+  score: number | null;
+  pointsPossible: number | null;
 }
 
-/** Collapse entities and whitespace so comparisons are about words. */
+export interface HacCourse {
+  /** Cleaned for display and for matching: "Entrepreneurship". */
+  name: string;
+  /** Exactly as HAC prints it: "CATE34400A - 2 Entrepreneurship S1". */
+  rawName: string;
+  /** The class period, when the name carries one. */
+  period: number | null;
+  /** The posted average, when HAC is showing one. */
+  percent: number | null;
+  assignments: HacAssignment[];
+}
+
+/** Collapse tags, entities and whitespace so comparisons are about words. */
 export function cleanText(input: string): string {
   return input
     .replace(/<[^>]*>/g, " ")
@@ -42,38 +55,49 @@ export function cleanText(input: string): string {
     .trim();
 }
 
-/**
- * Strip the course-code prefix districts put in front of names.
- *
- * "1234 - AP Calculus AB" and "AP Calculus AB" have to match the same class, or
- * every sync creates a duplicate. Only strips a *leading* code followed by a
- * separator, so "Algebra 2 - Honors" keeps both halves.
- */
-export function tidyCourseName(raw: string): string {
-  const text = cleanText(raw);
-
-  /*
-   * A leading code is an unbroken alphanumeric token containing at least one
-   * digit, followed by a separator: "1234 - ", "CHEM01 - ", "MA2100: ".
-   *
-   * The digit requirement is what protects real names. "Algebra 2 - Honors"
-   * survives because the token before the dash contains a space, and a purely
-   * alphabetic prefix like "Honors - Biology" survives because it has no digit.
-   */
-  const withoutCode = text.replace(
-    /^(?=[A-Z0-9]*\d)[A-Z0-9]{2,12}\s*[-–—:]\s*/i,
-    "",
-  );
-
-  return (withoutCode || text).trim();
+export interface TidyCourse {
+  name: string;
+  period: number | null;
 }
 
 /**
- * A percent from a cell that might say "93.5", "93.5%", "A (93.5)" or "A".
- * Returns null rather than guessing when there is no number — a letter grade
- * with no percentage is a real HAC state, and inventing 95 for an "A" would put
- * a fabricated number into the grade trend.
+ * Turn "CATE34400A - 2 Entrepreneurship S1" into "Entrepreneurship", period 2.
+ *
+ * Three layers of district bookkeeping wrap the actual class name, and all
+ * three have to go or the same class read from HAC and from Canvas will never
+ * match:
+ *
+ *   CATE34400A   the district course code
+ *   2            the period
+ *   S1           the semester
+ *
+ * The semester suffix matters more than it looks. HAC lists "…S1" and "…S2" as
+ * separate classes for the same subject all year, so keeping it would give a
+ * student two Entrepreneurship classes, one of which is always empty.
  */
+export function tidyCourseName(raw: string): TidyCourse {
+  let text = cleanText(raw);
+
+  // Leading course code: an alphanumeric token containing a digit, then a
+  // separator. "Algebra 2 - Honors" is untouched because the token before the
+  // dash contains a space.
+  text = text.replace(/^(?=[A-Z0-9]*\d)[A-Z0-9]{2,12}\s*[-–—:]\s*/i, "");
+
+  // Leading period number: a bare 1–2 digit number followed by a space.
+  let period: number | null = null;
+  const periodMatch = text.match(/^(\d{1,2})\s+(?=\S)/);
+  if (periodMatch) {
+    period = Number(periodMatch[1]);
+    text = text.slice(periodMatch[0].length);
+  }
+
+  // Trailing semester/term marker.
+  text = text.replace(/\s+(S[12]|SEM\s*[12]|Q[1-4]|YR)\s*$/i, "");
+
+  return { name: text.trim(), period };
+}
+
+/** A percent from "93.5", "93.5%", or "A (93.5)". Null when there is no number. */
 export function parsePercent(raw: string): number | null {
   const text = cleanText(raw);
   const match = text.match(/(\d{1,3}(?:\.\d+)?)\s*%?/);
@@ -85,145 +109,126 @@ export function parsePercent(raw: string): number | null {
   return value;
 }
 
-/** Rows whose "name" is actually furniture. */
-const NOT_A_COURSE =
-  /^(course|class|period|teacher|room|grade|average|marking period|report card|assignment|total|semester|quarter|term|credits?)$/i;
+/** "09/30/2026" → a local Date at midnight. */
+function parseDueDate(raw: string): Date | null {
+  const match = cleanText(raw).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!match) return null;
 
-function plausibleCourseName(name: string): boolean {
-  if (name.length < 3 || name.length > 80) return false;
-  if (NOT_A_COURSE.test(name)) return false;
+  const [, month, day, year] = match.map(Number);
+  const date = new Date(year, month - 1, day, 23, 59);
 
-  /*
-   * A percent sign means this is a mark, not a name. HAC's own markup is the
-   * reason: the average is rendered in a span carrying the *same* heading class
-   * as the course title, so "Student Grades 88.62%" was being registered as a
-   * course in its own right — every real class then appeared twice, once with
-   * no grade.
-   */
-  if (/%/.test(name)) return false;
-  if (/^student grades?\b/i.test(name)) return false;
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
-  // Needs at least one letter — a bare period number is not a class name.
-  return /[a-z]/i.test(name);
+function cells(row: string): string[] {
+  return [...row.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((cell) =>
+    cleanText(cell[1]),
+  );
 }
 
 /**
- * Pull courses and percentages out of a HAC grades page.
+ * Assignments inside one class block.
  *
- * Two passes, because HAC shows grades in two quite different places and which
- * one a district exposes varies:
+ * Columns are located by their headers rather than by position, because the set
+ * of columns differs between districts and a fixed index silently reads the
+ * wrong one — which is how a "Total Points" of 1 became a grade of 1%.
+ */
+function parseAssignments(block: string): HacAssignment[] {
+  const found: HacAssignment[] = [];
+
+  for (const table of block.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi)) {
+    const rows = [...table[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map(
+      (row) => cells(row[1]),
+    );
+    if (rows.length < 2) continue;
+
+    const header = rows[0].map((cell) => cell.toLowerCase());
+    const index = (...names: string[]) =>
+      header.findIndex((cell) => names.some((name) => cell.includes(name)));
+
+    const titleAt = index("assignment");
+    // Not an assignments table — leave it alone rather than guessing.
+    if (titleAt === -1) continue;
+
+    const dueAt = index("date due", "due date");
+    const categoryAt = index("category");
+    const scoreAt = index("score");
+    const totalAt = index("total points", "points");
+
+    for (const row of rows.slice(1)) {
+      const title = row[titleAt]?.replace(/\s*\*\s*$/, "").trim();
+      if (!title) continue;
+
+      found.push({
+        title,
+        dueAt: dueAt > -1 ? parseDueDate(row[dueAt] ?? "") : null,
+        category: categoryAt > -1 ? row[categoryAt] || null : null,
+        score: scoreAt > -1 ? parsePercent(row[scoreAt] ?? "") : null,
+        pointsPossible: totalAt > -1 ? parsePercent(row[totalAt] ?? "") : null,
+      });
+    }
+  }
+
+  return found;
+}
+
+/**
+ * Every class on the page, with its assignments.
  *
- *   1. The classic "Report Card"/"Grades" table — rows of cells.
- *   2. The newer Assignments view, where each course is a panel with the
- *      average in its header.
- *
- * Results are merged by course name, first non-null percent winning, so a page
- * containing both shapes does not produce duplicates.
+ * Anchored on `div.AssignmentClass`, which is the only element that means "a
+ * class starts here". Nothing else on the page is treated as a course.
  */
 export function parseHacGrades(html: string): HacCourse[] {
-  const found = new Map<string, HacCourse>();
+  const courses: HacCourse[] = [];
+  const seen = new Set<string>();
 
-  const add = (rawName: string, percent: number | null) => {
-    const name = tidyCourseName(rawName);
-    if (!plausibleCourseName(name)) return;
+  const blocks = html.split(/(?=<div[^>]*class="[^"]*AssignmentClass)/i).slice(1);
 
-    const existing = found.get(name.toLowerCase());
-    if (existing) {
-      if (existing.percent === null && percent !== null) existing.percent = percent;
-      return;
-    }
-
-    found.set(name.toLowerCase(), { name, percent });
-  };
-
-  /* ---- 1. Course panels (Assignments view) --------------------------------
-     Each course is a heading followed by its average somewhere in the same
-     block: <a class="sg-header-heading">1234 - US History</a> … 88.62%
-
-     Anchored on the heading element itself rather than on the container's class
-     attribute. Starting from `class="…sg-header…"` and scanning forward for the
-     next `>` matched the whitespace immediately after the attribute, so every
-     "course name" came back blank and the whole pass silently found nothing. */
-  /*
-   * The name is taken from an anchor specifically, and only another *anchor*
-   * ends the block. Allowing any heading-classed element to both name a course
-   * and terminate the search meant the grade span ended the block it contained
-   * the grade for — so every course parsed with a null percent.
-   */
-  const headingPattern =
-    /<a[^>]*class="[^"]*sg-header-heading[^"]*"[^>]*>([\s\S]*?)<\/a>([\s\S]{0,800}?)(?=<a[^>]*class="[^"]*sg-header-heading|$)/gi;
-
-  for (const match of html.matchAll(headingPattern)) {
-    const name = cleanText(match[1]);
-    if (!plausibleCourseName(tidyCourseName(name))) continue;
-
-    // A percent sign is the reliable marker inside a panel; a bare number here
-    // is as likely to be a period or a room.
-    const percent = cleanText(match[2]).match(/(\d{1,3}(?:\.\d+)?)\s*%/);
-    add(name, percent ? parsePercent(percent[1]) : null);
-  }
-
-  /* ---- 2. Table rows ------------------------------------------------------ */
-  for (const table of html.matchAll(/<table[\s\S]*?<\/table>/gi)) {
-    const rows = [...table[0].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((row) =>
-      [...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((cell) =>
-        cleanText(cell[1]),
-      ),
+  for (const block of blocks) {
+    const anchor = block.match(
+      /class="sg-header-heading"[^>]*>([\s\S]*?)<\/a>/i,
     );
+    if (!anchor) continue;
+
+    const rawName = cleanText(anchor[1]);
+    const { name, period } = tidyCourseName(rawName);
+    if (!name || name.length < 2) continue;
+
+    // The S1/S2 split means the same subject can appear twice; keep the first.
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
 
     /*
-     * Find the grade column from the header.
-     *
-     * Without this, "the first cell after the name containing a digit" picks up
-     * the *period* — every course came back with a grade of 3, 4 or 6. The
-     * header is the only thing on the page that says which column is which.
+     * The average lives in the right-hand header span. It is blank whenever the
+     * Report Card Run is "(All Runs)" — HAC refuses to compute one — and also
+     * whenever nothing has actually been marked yet, which is the normal state
+     * at the start of a term. A blank average is not an error and must not be
+     * written as a zero.
      */
-    const header = rows.find((cells) =>
-      cells.some((cell) => /^(course|class)$/i.test(cell)),
+    const right = block.match(
+      /class="sg-header-heading sg-right"[^>]*>([\s\S]*?)<\/span>/i,
     );
-    const gradeColumn =
-      header?.findIndex((cell) =>
-        /average|grade|percent|mark|score/i.test(cell),
-      ) ?? -1;
+    const percentText = right ? cleanText(right[1]) : "";
+    const percent = /\d/.test(percentText) ? parsePercent(percentText) : null;
 
-    for (const cells of rows) {
-      if (cells === header || cells.length < 2) continue;
-
-      const nameIndex = cells.findIndex((cell) =>
-        plausibleCourseName(tidyCourseName(cell)),
-      );
-      if (nameIndex === -1) continue;
-
-      let percent: number | null = null;
-
-      if (gradeColumn > -1 && cells[gradeColumn] !== undefined) {
-        percent = parsePercent(cells[gradeColumn]);
-      } else {
-        /*
-         * No usable header. Prefer a cell that *looks* like a mark — one with a
-         * percent sign or a decimal — over a bare integer, which is far more
-         * likely to be a period, a room or a credit count.
-         */
-        const candidate = cells
-          .slice(nameIndex + 1)
-          .find((cell) => /%/.test(cell) || /\d+\.\d+/.test(cell));
-
-        percent = candidate ? parsePercent(candidate) : null;
-      }
-
-      add(cells[nameIndex], percent);
-    }
+    courses.push({
+      name,
+      rawName,
+      period,
+      percent,
+      assignments: parseAssignments(block),
+    });
   }
 
-  return [...found.values()];
+  return courses;
 }
 
 /**
  * Did we land on a logged-in page at all?
  *
  * A failed HAC login returns HTTP 200 with the login form again, so "the fetch
- * worked" says nothing. Without this check a wrong password looks exactly like
- * a class list of zero, and the student is told they have no courses.
+ * worked" says nothing.
  */
 export function looksLikeLoginPage(html: string): boolean {
   return (

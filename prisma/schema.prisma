@@ -33,6 +33,15 @@ model Course {
   term                String?
   currentGradePercent Float?
 
+  /// Hidden from every list without being deleted.
+  ///
+  /// A Canvas enrolment is not the same thing as a class. Homeroom, a club, a
+  /// district-wide orientation course and the school's activities page all show
+  /// up as courses and none of them has homework. Deleting them is wrong — the
+  /// next sync recreates them — so they are hidden instead, and the flag
+  /// survives because sync only ever writes name, term and grade.
+  hidden Boolean @default(false)
+
   assignments     Assignment[]
   snapshots       GradeSnapshot[]
   announcements   Announcement[]
@@ -93,6 +102,9 @@ enum AssignmentSource {
   CANVAS
   SYLLABUS
   MANUAL
+  /// Scraped from Home Access Center. HAC owns these the way Canvas owns its
+  /// own: they are re-imported on every sync, so they are not user-deletable.
+  HAC
 }
 
 /// One row per course per day — powers grade trend detection.

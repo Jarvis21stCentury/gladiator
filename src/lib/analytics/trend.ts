@@ -75,6 +75,7 @@ export async function getCourseTrends(): Promise<CourseTrend[]> {
   const since = startOfWindow(TREND_WINDOW_DAYS);
 
   const courses = await prisma.course.findMany({
+    where: { hidden: false },
     orderBy: { name: "asc" },
     select: {
       id: true,

@@ -44,6 +44,7 @@ export async function getDeckSummaries(): Promise<DeckSummary[]> {
   const now = new Date();
 
   const courses = await prisma.course.findMany({
+    where: { hidden: false },
     orderBy: { name: "asc" },
     select: {
       id: true,

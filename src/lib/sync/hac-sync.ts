@@ -3,19 +3,28 @@ import "server-only";
 import { fetchHacGradesHtml, HacError } from "@/lib/hac/client";
 import { getHacCredentials } from "@/lib/hac/config";
 import { parseHacGrades } from "@/lib/hac/parse";
+import { normaliseCourseName } from "@/lib/courses/match";
 import { prisma } from "@/lib/prisma";
 
 /**
- * Pull grades from HAC into the classes this app already knows about.
+ * Import classes, assignments and grades from Home Access Center.
  *
- * Matching is by name, case-insensitively, because HAC and Canvas have no
- * shared identifier — they are separate systems that happen to describe the
- * same six classes. `tidyCourseName` strips the district course code first, so
- * "1234 - AP Calculus AB" in HAC lines up with "AP Calculus AB" from Canvas.
+ * Matching goes through `normaliseCourseName`, because HAC and Canvas share no
+ * identifier and dress the same class up differently — Canvas as "AP Pre
+ * Calculus YR (GIPSON, HANNAH)", HAC as "MTH34300A - 3 AP Pre Calculus S1".
+ * Comparing raw names meant every class existed twice, once per source, each
+ * holding half the information.
  *
- * A class HAC knows about and Canvas does not is created, with a null
- * `canvasId` — the same shape as one added by hand, and therefore untouched by
- * a Canvas sync.
+ * A class HAC knows about and Canvas does not is created with a null
+ * `canvasId`, which is what keeps a later Canvas sync from touching it.
+ *
+ * ## Assignments are owned by HAC, not the student
+ *
+ * They are written with `source: HAC` rather than `MANUAL`, so they carry no
+ * delete or complete controls: HAC re-imports them on every sync, and a row the
+ * student deleted would simply come back. Their identity is course + title,
+ * which is the only stable pair the page exposes — there is no assignment id in
+ * the markup.
  */
 
 export interface HacSyncResult {
@@ -23,62 +32,54 @@ export interface HacSyncResult {
   coursesMatched: number;
   coursesCreated: number;
   gradesUpdated: number;
-  /** Names HAC returned with no percent — reported rather than silently ignored. */
-  withoutGrades: string[];
+  assignmentsImported: number;
+  assignmentsUpdated: number;
+  /** True when HAC showed no averages at all — normal early in a term. */
+  noGradesPosted: boolean;
   message: string;
 }
 
+const failure = (message: string): HacSyncResult => ({
+  status: "FAILED",
+  coursesMatched: 0,
+  coursesCreated: 0,
+  gradesUpdated: 0,
+  assignmentsImported: 0,
+  assignmentsUpdated: 0,
+  noGradesPosted: false,
+  message,
+});
+
 export async function runHacSync(): Promise<HacSyncResult> {
   const credentials = await getHacCredentials();
-
-  if (!credentials) {
-    return {
-      status: "FAILED",
-      coursesMatched: 0,
-      coursesCreated: 0,
-      gradesUpdated: 0,
-      withoutGrades: [],
-      message: "HAC isn't connected.",
-    };
-  }
+  if (!credentials) return failure("HAC isn't connected.");
 
   let courses;
 
   try {
     courses = parseHacGrades(await fetchHacGradesHtml(credentials));
   } catch (error) {
-    return {
-      status: "FAILED",
-      coursesMatched: 0,
-      coursesCreated: 0,
-      gradesUpdated: 0,
-      withoutGrades: [],
-      message:
-        error instanceof HacError
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : String(error),
-    };
+    return failure(
+      error instanceof HacError || error instanceof Error
+        ? error.message
+        : String(error),
+    );
   }
 
   if (courses.length === 0) {
-    return {
-      status: "FAILED",
-      coursesMatched: 0,
-      coursesCreated: 0,
-      gradesUpdated: 0,
-      withoutGrades: [],
-      message:
-        "Signed in, but no classes could be read from the page. Your district's HAC layout is probably different — the parser needs a look at it.",
-    };
+    return failure(
+      "Signed in, but no classes could be read from the page. Your district's HAC layout is probably different.",
+    );
   }
 
   const existing = await prisma.course.findMany({
     select: { id: true, name: true },
   });
+
+  // Normalised on both sides, so a HAC class lands on the Canvas course that
+  // already represents it rather than creating a second one beside it.
   const byName = new Map(
-    existing.map((course) => [course.name.trim().toLowerCase(), course.id]),
+    existing.map((course) => [normaliseCourseName(course.name), course.id]),
   );
 
   const now = new Date();
@@ -88,53 +89,106 @@ export async function runHacSync(): Promise<HacSyncResult> {
 
   let matched = 0;
   let created = 0;
+  let gradesUpdated = 0;
+  let imported = 0;
   let updated = 0;
-  const withoutGrades: string[] = [];
 
   for (const course of courses) {
-    let courseId = byName.get(course.name.toLowerCase());
+    const key = normaliseCourseName(course.name);
+    let courseId = byName.get(key);
 
     if (courseId) {
       matched += 1;
     } else {
-      const record = await prisma.course.create({
-        data: { name: course.name },
-      });
+      const record = await prisma.course.create({ data: { name: course.name } });
       courseId = record.id;
-      byName.set(course.name.toLowerCase(), courseId);
+      byName.set(key, courseId);
       created += 1;
     }
 
-    // A class with no posted percent is a real state — nothing graded yet. It
-    // is reported, not written as a zero.
-    if (course.percent === null) {
-      withoutGrades.push(course.name);
-      continue;
+    /*
+     * A blank average is a real state, not a failure: HAC hides averages when
+     * the Report Card Run is "(All Runs)", and nothing is marked at the start
+     * of a term anyway. Writing it as a zero would put a fabricated grade into
+     * the trend, so it is left alone.
+     */
+    if (course.percent !== null) {
+      await prisma.$transaction([
+        prisma.course.update({
+          where: { id: courseId },
+          data: { currentGradePercent: course.percent },
+        }),
+        prisma.gradeSnapshot.upsert({
+          where: { courseId_date: { courseId, date: today } },
+          create: { courseId, date: today, gradePercent: course.percent },
+          update: { gradePercent: course.percent },
+        }),
+      ]);
+      gradesUpdated += 1;
     }
 
-    await prisma.$transaction([
-      prisma.course.update({
-        where: { id: courseId },
-        data: { currentGradePercent: course.percent },
-      }),
-      prisma.gradeSnapshot.upsert({
-        where: { courseId_date: { courseId, date: today } },
-        create: { courseId, date: today, gradePercent: course.percent },
-        update: { gradePercent: course.percent },
-      }),
-    ]);
+    for (const assignment of course.assignments) {
+      // Without a due date an assignment is invisible everywhere in this app —
+      // every list filters on `dueAt` — so importing one would be storing a row
+      // nobody can ever see.
+      if (!assignment.dueAt) continue;
 
-    updated += 1;
+      const found = await prisma.assignment.findFirst({
+        where: { courseId, title: assignment.title },
+        select: { id: true, source: true },
+      });
+
+      /*
+       * Canvas wins where both describe the same piece of work.
+       *
+       * Canvas carries points, submission state and a link back to the real
+       * assignment; HAC carries a title and a date. Overwriting a Canvas row
+       * with the thinner HAC version would lose all of that, so an existing
+       * non-HAC assignment is left exactly as it is.
+       */
+      if (found && found.source !== "HAC") continue;
+
+      // A score means it has been marked, which is the closest thing HAC gives
+      // to Canvas's submitted flag.
+      const data = {
+        dueAt: assignment.dueAt,
+        pointsPossible: assignment.pointsPossible,
+        score: assignment.score,
+        submitted: assignment.score !== null,
+      };
+
+      if (found) {
+        await prisma.assignment.update({ where: { id: found.id }, data });
+        updated += 1;
+      } else {
+        await prisma.assignment.create({
+          data: { ...data, courseId, title: assignment.title, source: "HAC" },
+        });
+        imported += 1;
+      }
+    }
   }
+
+  const noGradesPosted = gradesUpdated === 0;
+
+  const parts = [
+    `${matched + created} class${matched + created === 1 ? "" : "es"}`,
+    created > 0 ? `${created} new` : null,
+    imported > 0 ? `${imported} assignment${imported === 1 ? "" : "s"} imported` : null,
+    updated > 0 ? `${updated} updated` : null,
+    gradesUpdated > 0
+      ? `${gradesUpdated} grade${gradesUpdated === 1 ? "" : "s"}`
+      : "no grades posted yet",
+  ].filter(Boolean);
 
   return {
     status: "SUCCESS",
     coursesMatched: matched,
     coursesCreated: created,
-    gradesUpdated: updated,
-    withoutGrades,
-    message: `Updated ${updated} grade${updated === 1 ? "" : "s"}${
-      created > 0 ? `, added ${created} class${created === 1 ? "" : "es"}` : ""
-    }.`,
+    gradesUpdated,
+    assignmentsImported: imported,
+    assignmentsUpdated: updated,
+    noGradesPosted,
+    message: parts.join(" · "),
   };
 }

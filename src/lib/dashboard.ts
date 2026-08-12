@@ -48,6 +48,8 @@ async function findDue(from: Date, to?: Date): Promise<DueItem[]> {
       // ever marked submitted, so everything stays visible there.
       submitted: false,
       dueAt: to ? { gte: from, lt: to } : { gte: from },
+      // Homeroom has no homework; its "assignments" are not work.
+      course: { hidden: false },
     },
     orderBy: { dueAt: "asc" },
     take: 50,
@@ -83,6 +85,7 @@ export async function getDashboardData() {
       findDue(tomorrow, weekEnd),
       findDue(weekEnd),
       prisma.course.findMany({
+        where: { hidden: false },
         orderBy: { name: "asc" },
         select: {
           id: true,

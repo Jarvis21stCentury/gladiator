@@ -113,6 +113,7 @@ export async function getPlanInputs(date: Date): Promise<PlanInputs> {
       where: {
         submitted: false,
         dueAt: { not: null, lt: horizon },
+        course: { hidden: false },
       },
       orderBy: { dueAt: "asc" },
       include: { course: { select: { id: true, name: true } } },
