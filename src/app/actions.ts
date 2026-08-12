@@ -495,3 +495,114 @@ function revalidateRoutine(): void {
   revalidatePath("/");
   revalidatePath("/calendar");
 }
+
+/* ==========================================================================
+   CLASSES AND GRADES BY HAND
+
+   Canvas is the fastest way to fill this app, and it is not the only way. Many
+   schools keep assignments in Canvas and grades in something else entirely, and
+   some classes are in neither. Everything below exists so the app is usable
+   without waiting on an integration.
+   ========================================================================== */
+
+/** Add a class that isn't coming from Canvas. */
+export async function createCourse(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const name = String(formData.get("name") ?? "").trim();
+  const term = String(formData.get("term") ?? "").trim();
+
+  if (!name) return { ok: false, message: "Give the class a name." };
+  if (name.length > 80) {
+    return { ok: false, message: "Keep the name under 80 characters." };
+  }
+
+  const existing = await prisma.course.findFirst({
+    where: { name: { equals: name, mode: "insensitive" } },
+    select: { id: true },
+  });
+
+  if (existing) {
+    return { ok: false, message: `"${name}" already exists.` };
+  }
+
+  // `canvasId` stays null — that is what marks this as yours rather than
+  // Canvas's, and it is why a sync will never overwrite or delete it.
+  await prisma.course.create({
+    data: { name, term: term || null },
+  });
+
+  revalidatePath("/classes");
+  revalidatePath("/");
+
+  return { ok: true, message: `Added ${name}.` };
+}
+
+/**
+ * Set a class's current grade by hand.
+ *
+ * Writes the course's headline figure *and* a snapshot for today, because the
+ * grade trend on the front page is built from snapshots. Setting a grade with
+ * no snapshot would show the new number with a trend line that never moved.
+ *
+ * One snapshot per course per day (the schema enforces it), so correcting a
+ * typo twice in an evening updates today's point rather than creating two.
+ */
+export async function setCourseGrade(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const courseId = String(formData.get("courseId") ?? "");
+  const raw = String(formData.get("percent") ?? "").trim();
+
+  if (!courseId) return { ok: false, message: "Pick a class." };
+
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: { id: true, name: true },
+  });
+
+  if (!course) return { ok: false, message: "That class no longer exists." };
+
+  // Empty clears the grade — distinct from a grade of zero.
+  if (raw === "") {
+    await prisma.course.update({
+      where: { id: course.id },
+      data: { currentGradePercent: null },
+    });
+    revalidatePath("/classes");
+    revalidatePath("/");
+    return { ok: true, message: `Cleared the grade for ${course.name}.` };
+  }
+
+  const percent = Number(raw);
+
+  if (!Number.isFinite(percent) || percent < 0 || percent > 150) {
+    return { ok: false, message: "Enter a percent between 0 and 150." };
+  }
+
+  // @db.Date, so normalise to midnight UTC for a stable unique key — the same
+  // convention the daily plan uses.
+  const now = new Date();
+  const today = new Date(
+    Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()),
+  );
+
+  await prisma.$transaction([
+    prisma.course.update({
+      where: { id: course.id },
+      data: { currentGradePercent: percent },
+    }),
+    prisma.gradeSnapshot.upsert({
+      where: { courseId_date: { courseId: course.id, date: today } },
+      create: { courseId: course.id, date: today, gradePercent: percent },
+      update: { gradePercent: percent },
+    }),
+  ]);
+
+  revalidatePath("/classes");
+  revalidatePath("/");
+
+  return { ok: true, message: `${course.name} set to ${percent}%.` };
+}

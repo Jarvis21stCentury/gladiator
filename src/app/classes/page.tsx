@@ -11,6 +11,8 @@ import { PageHeader } from "@/components/press/PageHeader";
 import { Plate } from "@/components/press/Plate";
 import { Rule } from "@/components/press/Rule";
 import { SectionHead } from "@/components/press/SectionHead";
+import { CourseForm } from "@/components/CourseForm";
+import { GradeEditor } from "@/components/GradeEditor";
 import { TaskRowActions } from "@/components/TaskRowActions";
 import { Trace } from "@/components/press/Trace";
 import { getClassViews, type ClassView } from "@/lib/classes";
@@ -219,6 +221,14 @@ function Dossier({
               {gradeLabel(view.currentGradePercent)}
             </p>
             <p className="rubric mt-2">current grade</p>
+            <div className="mt-2 flex lg:justify-end">
+              <GradeEditor
+                courseId={view.id}
+                courseName={view.name}
+                percent={view.currentGradePercent}
+                fromCanvas={view.fromCanvas}
+              />
+            </div>
             {trend ? (
               <p
                 className="docket mt-2"
@@ -552,6 +562,13 @@ export default async function ClassesPage({
                 description="Every class on the same scale, so you can see which one needs the time."
                 hint="Click a class to jump to its full dossier."
               />
+
+              {/* Adding a class comes first when there are none: with no
+                  classes there is nothing to compare, and every task in the
+                  product has to belong to one. */}
+              <div className="mb-[var(--block)]">
+                <CourseForm />
+              </div>
 
               <div className="hang">
                 <span aria-hidden="true" className="hidden lg:block" />

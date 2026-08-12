@@ -70,9 +70,20 @@ export async function ingestCanvasContent(
     token: config.token!,
   });
 
-  const courses = await prisma.course.findMany({
-    select: { id: true, canvasId: true, name: true },
-  });
+  /*
+   * Canvas-backed classes only. A class added by hand has no `canvasId` and
+   * therefore no modules or pages to scan — asking Canvas about it would be a
+   * request for course `null`.
+   */
+  const courses = (
+    await prisma.course.findMany({
+      where: { canvasId: { not: null } },
+      select: { id: true, canvasId: true, name: true },
+    })
+  ).filter(
+    (course): course is { id: string; canvasId: number; name: string } =>
+      course.canvasId !== null,
+  );
 
   let sourcesAdded = 0;
   let baselinedCourses = 0;

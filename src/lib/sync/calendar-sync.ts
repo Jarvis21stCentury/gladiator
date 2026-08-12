@@ -44,7 +44,8 @@ type AssignmentWithCourse = {
   title: string;
   dueAt: Date | null;
   pointsPossible: number | null;
-  course: { name: string; canvasId: number };
+  /** Null on a class you added yourself — there is no Canvas page to link to. */
+  course: { name: string; canvasId: number | null };
 };
 
 function buildEvent(assignment: AssignmentWithCourse, dueAt: Date) {
@@ -55,7 +56,10 @@ function buildEvent(assignment: AssignmentWithCourse, dueAt: Date) {
   if (assignment.pointsPossible !== null) {
     lines.push(`${assignment.pointsPossible} points`);
   }
-  if (canvasBase) {
+  // Only link back to Canvas when both ids exist. A hand-added task on a
+  // hand-added class would otherwise get a calendar event containing a link to
+  // `/courses/null/assignments/null`.
+  if (canvasBase && assignment.course.canvasId !== null && assignment.canvasId !== null) {
     lines.push(
       `${canvasBase}/courses/${assignment.course.canvasId}/assignments/${assignment.canvasId}`,
     );

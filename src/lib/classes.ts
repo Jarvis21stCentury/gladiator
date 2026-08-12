@@ -47,6 +47,8 @@ export interface ClassView {
   name: string;
   term: string | null;
   currentGradePercent: number | null;
+  /** False for a class added by hand — a sync will never touch it. */
+  fromCanvas: boolean;
   level: StatusLevel;
   trend: CourseTrend | null;
   struggles: ActiveStruggle[];
@@ -140,6 +142,7 @@ export async function getClassViews(): Promise<ClassView[]> {
       name: course.name,
       term: course.term,
       currentGradePercent: course.currentGradePercent,
+      fromCanvas: course.canvasId !== null,
       level: maxLevel(
         levelForGrade(course.currentGradePercent),
         overdueCount > 0 ? "urgent" : "calm",

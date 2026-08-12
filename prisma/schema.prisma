@@ -18,8 +18,17 @@ datasource db {
 }
 
 model Course {
-  id                  String  @id @default(cuid())
-  canvasId            Int     @unique
+  id String @id @default(cuid())
+
+  /// Null for a class you added yourself.
+  ///
+  /// Plenty of schools keep assignments in Canvas and grades somewhere else
+  /// entirely — or use neither for a particular class. Requiring a Canvas id
+  /// meant a student whose school does not use Canvas could not create a single
+  /// class, and therefore could not add a task, since every task belongs to one.
+  /// Postgres allows many NULLs in a unique index, so the Canvas upsert-on-id
+  /// path is unaffected. `Assignment.canvasId` has worked this way all along.
+  canvasId            Int?    @unique
   name                String
   term                String?
   currentGradePercent Float?

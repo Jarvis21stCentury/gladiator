@@ -61,7 +61,16 @@ async function syncViaApi(
       update: {
         name: course.name,
         term: course.term?.name ?? null,
-        currentGradePercent: gradePercent,
+        /*
+         * Only write the grade when Canvas actually has one.
+         *
+         * `computed_current_score` is null for plenty of real classes — nothing
+         * graded yet, or a teacher who keeps grades elsewhere. Writing that null
+         * through would erase a grade the student typed in by hand, silently,
+         * on the next sync. Canvas wins when Canvas knows; it does not get to
+         * overwrite with an absence.
+         */
+        ...(gradePercent === null ? {} : { currentGradePercent: gradePercent }),
       },
     });
 
