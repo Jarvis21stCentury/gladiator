@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { schedule, type Rating } from "@/lib/flashcards/schedule";
 import { prisma } from "@/lib/prisma";
 import { parseClock } from "@/lib/routine/model";
+import { saveSchoolYear } from "@/lib/school-year";
 
 /**
  * The two write paths the UI owns directly. Everything else that writes goes
@@ -633,4 +634,38 @@ export async function toggleCourseHidden(formData: FormData): Promise<void> {
   revalidatePath("/classes");
   revalidatePath("/");
   revalidatePath("/calendar");
+}
+
+/**
+ * Set the school year every list is bounded by.
+ *
+ * Defaults to Frisco ISD's published 2026-27 calendar, which is a fact about
+ * one district — so it is editable rather than compiled in.
+ */
+export async function setSchoolYear(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const start = String(formData.get("start") ?? "").trim();
+  const end = String(formData.get("end") ?? "").trim();
+
+  const isDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+  if (!isDate(start) || !isDate(end)) {
+    return { ok: false, message: "Pick both dates." };
+  }
+
+  if (start >= end) {
+    return { ok: false, message: "The last day has to be after the first day." };
+  }
+
+  await saveSchoolYear(start, end);
+
+  // Every list, the forecast and the planner are bounded by this.
+  revalidatePath("/");
+  revalidatePath("/classes");
+  revalidatePath("/calendar");
+  revalidatePath("/routine");
+
+  return { ok: true, message: "School year updated." };
 }

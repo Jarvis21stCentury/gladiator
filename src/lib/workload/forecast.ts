@@ -4,6 +4,7 @@ import { createEstimator } from "@/lib/effort/estimate";
 import { prisma } from "@/lib/prisma";
 import { freeMinutes, resolveDay, type RoutineBlockRecord } from "@/lib/routine/model";
 import { getRoutine } from "@/lib/routine/routine";
+import { getSchoolYear, withinSchoolYear } from "@/lib/school-year";
 import { levelForLoad, type StatusLevel } from "@/lib/status";
 
 /**
@@ -103,6 +104,8 @@ export async function getWorkloadForecast(
   const today = startOfDay(from);
   const horizon = addDays(today, dayCount);
 
+  const year = await getSchoolYear();
+
   const [routine, assignments, blocks, estimator] = await Promise.all([
     getRoutine(),
     prisma.assignment.findMany({
@@ -110,6 +113,7 @@ export async function getWorkloadForecast(
         submitted: false,
         dueAt: { gte: today, lt: horizon },
         course: { hidden: false },
+        AND: withinSchoolYear(year),
       },
       orderBy: { dueAt: "asc" },
       include: { course: { select: { id: true, name: true } } },

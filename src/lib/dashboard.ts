@@ -2,6 +2,7 @@ import "server-only";
 
 import type { AssignmentSource } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { getSchoolYear, withinSchoolYear, type SchoolYear } from "@/lib/school-year";
 
 /**
  * Day boundaries use the server's local time. On Vercel that is UTC, which will
@@ -41,7 +42,11 @@ export interface DueItem {
   difficulty: number | null;
 }
 
-async function findDue(from: Date, to?: Date): Promise<DueItem[]> {
+async function findDue(
+  year: SchoolYear,
+  from: Date,
+  to?: Date,
+): Promise<DueItem[]> {
   const assignments = await prisma.assignment.findMany({
     where: {
       // Already-submitted work isn't a to-do. In the iCal fallback nothing is
@@ -50,6 +55,8 @@ async function findDue(from: Date, to?: Date): Promise<DueItem[]> {
       dueAt: to ? { gte: from, lt: to } : { gte: from },
       // Homeroom has no homework; its "assignments" are not work.
       course: { hidden: false },
+      // Nothing from a previous school year — see lib/school-year.ts.
+      AND: withinSchoolYear(year),
     },
     orderBy: { dueAt: "asc" },
     take: 50,
@@ -71,6 +78,7 @@ export async function getDashboardData() {
   const today = startOfToday();
   const tomorrow = addDays(today, 1);
   const weekEnd = endOfWeek(today);
+  const year = await getSchoolYear();
 
   const [
     dueToday,
@@ -81,9 +89,9 @@ export async function getDashboardData() {
     lastCalendarSync,
     overdue,
   ] = await Promise.all([
-      findDue(today, tomorrow),
-      findDue(tomorrow, weekEnd),
-      findDue(weekEnd),
+      findDue(year, today, tomorrow),
+      findDue(year, tomorrow, weekEnd),
+      findDue(year, weekEnd),
       prisma.course.findMany({
         where: { hidden: false },
         orderBy: { name: "asc" },
@@ -106,7 +114,7 @@ export async function getDashboardData() {
       where: { mode: "GOOGLE_CALENDAR" },
       orderBy: { startedAt: "desc" },
     }),
-    findDue(new Date(0), today),
+    findDue(year, new Date(0), today),
   ]);
 
   return {

@@ -48,6 +48,16 @@ Full design tokens, typography and layout rules live in `CLAUDE.md`; the motion 
 > on cool stock with a chartreuse highlighter. All were scrapped in full. Anything below
 > is the ruled-notebook system that replaced them — see CLAUDE.md.
 
+### The school year
+
+Canvas keeps every course a student has ever been enrolled in, and their assignments come with them. In practice: 204 assignments, **56 due before this school year started** — some dated 2021 — and **111 with no due date at all**, all sitting in the same lists as tonight's homework. No amount of sorting fixes that; last year's work simply is not this year's problem.
+
+Every list, the two-week forecast, the timetable and the planner are bounded by the school year. Defaults come from [Frisco ISD's published 2026-27 calendar](https://www.friscoisd.org/o/flex/article/3034519) — first day **12 August 2026**, last day **14 May 2027**, taken from the district's own student calendar PDF — and both ends are editable on the Routine page, because a district calendar is a fact about one district and one year.
+
+Undated assignments are excluded too, deliberately. An assignment with no due date cannot be late, cannot be planned and cannot be scheduled: every list in this product keys off a due date. Mostly they are not work at all.
+
+The effect on this student's data: **37 assignments in scope, 167 out of it.**
+
 ### The weekly routine
 
 Everything else in this product answers "what is due". The routine answers **"when are you actually free"**, and until it existed the planner had to guess: free time was a single clock range from an env var — 16:00 to 21:30, the same for everybody, every day of the week. A schedule built on that is one you cannot follow, and a schedule you cannot follow is one you stop opening.

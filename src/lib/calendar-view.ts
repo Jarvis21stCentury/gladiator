@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { getSchoolYear, withinSchoolYear } from "@/lib/school-year";
 import { levelForDueDate, maxLevel, type StatusLevel } from "@/lib/status";
 import { getWorkloadForecast, type ForecastDay } from "@/lib/workload/forecast";
 
@@ -81,9 +82,15 @@ export async function getDayDetail(date: Date): Promise<DayDetail> {
   const dayEnd = new Date(dayStart);
   dayEnd.setDate(dayEnd.getDate() + 1);
 
+  const year = await getSchoolYear();
+
   const [assignments, blocks, forecast] = await Promise.all([
     prisma.assignment.findMany({
-      where: { dueAt: { gte: dayStart, lt: dayEnd }, course: { hidden: false } },
+      where: {
+        dueAt: { gte: dayStart, lt: dayEnd },
+        course: { hidden: false },
+        AND: withinSchoolYear(year),
+      },
       orderBy: { dueAt: "asc" },
       include: { course: { select: { name: true } } },
     }),

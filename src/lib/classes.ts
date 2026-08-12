@@ -4,6 +4,7 @@ import { getCourseTrends, type CourseTrend } from "@/lib/analytics/trend";
 import { createEstimator } from "@/lib/effort/estimate";
 import type { AssignmentSource } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { getSchoolYear, withinSchoolYear } from "@/lib/school-year";
 import { levelForDueDate, levelForGrade, maxLevel, type StatusLevel } from "@/lib/status";
 import { getActiveStruggles, type ActiveStruggle } from "@/lib/struggles/engine";
 
@@ -77,6 +78,8 @@ export async function getClassViews(): Promise<ClassView[]> {
   const since = new Date(now);
   since.setDate(since.getDate() - LOOKBACK_DAYS);
 
+  const year = await getSchoolYear();
+
   const [courses, trends, struggles, estimator] = await Promise.all([
     prisma.course.findMany({
       // Hidden classes are enrolments, not classes — see Course.hidden.
@@ -84,8 +87,19 @@ export async function getClassViews(): Promise<ClassView[]> {
       orderBy: { name: "asc" },
       include: {
         assignments: {
+          /*
+           * This school year only, and nothing undated.
+           *
+           * Canvas hands over every assignment from every course a student has
+           * ever been enrolled in — here, 204 of them, 56 due before this year
+           * started and 111 with no due date at all. A dossier listing four
+           * years of history is not a dossier, and an undated assignment cannot
+           * be late, planned or scheduled; every list in this product keys off
+           * a due date.
+           */
           where: {
-            OR: [{ dueAt: { gte: since } }, { dueAt: null }],
+            dueAt: { gte: since },
+            AND: withinSchoolYear(year),
           },
           orderBy: { dueAt: "asc" },
           include: {

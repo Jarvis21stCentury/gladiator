@@ -4,6 +4,7 @@ import { createEstimator, type EffortSource } from "@/lib/effort/estimate";
 import { prisma } from "@/lib/prisma";
 import { freeSpans, resolveDay } from "@/lib/routine/model";
 import { getRoutine } from "@/lib/routine/routine";
+import { getSchoolYear, withinSchoolYear } from "@/lib/school-year";
 import type { ScheduleOptions } from "./schedule";
 
 /**
@@ -107,6 +108,8 @@ export async function getPlanInputs(date: Date): Promise<PlanInputs> {
   const horizon = new Date(dayStart);
   horizon.setDate(horizon.getDate() + LOOKAHEAD_DAYS);
 
+  const year = await getSchoolYear();
+
   const [routine, assignments, estimator] = await Promise.all([
     getRoutine(),
     prisma.assignment.findMany({
@@ -114,6 +117,7 @@ export async function getPlanInputs(date: Date): Promise<PlanInputs> {
         submitted: false,
         dueAt: { not: null, lt: horizon },
         course: { hidden: false },
+        AND: withinSchoolYear(year),
       },
       orderBy: { dueAt: "asc" },
       include: { course: { select: { id: true, name: true } } },

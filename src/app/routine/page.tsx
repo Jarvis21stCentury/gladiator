@@ -11,6 +11,8 @@ import {
   resolveDay,
 } from "@/lib/routine/model";
 import { getRoutine } from "@/lib/routine/routine";
+import { getSchoolYear, toISO } from "@/lib/school-year";
+import { SchoolYearForm } from "@/components/SchoolYearForm";
 
 /**
  * The weekly routine.
@@ -48,7 +50,7 @@ const KIND_COLOR: Record<string, string> = {
 };
 
 export default async function RoutinePage() {
-  const routine = await getRoutine();
+  const [routine, year] = await Promise.all([getRoutine(), getSchoolYear()]);
   const empty = routine.length === 0;
 
   const week = DAYS.map((day) => {
@@ -168,6 +170,15 @@ export default async function RoutinePage() {
               ) : null}
             </div>
           ))}
+        </div>
+
+        <div className="mt-[var(--section)]">
+          <SectionHead id="year" serial="02" rubric="Term" title="School year" />
+          <SchoolYearForm
+            start={toISO(year.start)}
+            end={toISO(year.end)}
+            configured={year.configured}
+          />
         </div>
 
         <Rule className="mt-[var(--section)]" />
