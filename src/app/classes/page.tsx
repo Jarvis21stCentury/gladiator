@@ -91,10 +91,21 @@ function WhatIf({ result }: { result: WhatIfResult }) {
               : undefined
           }
         />
+        {/*
+          Replaced "Ungraded points". That was a points total over everything
+          unmarked — mostly work not even due yet — which answered a question
+          nobody asks. This is the one they do: how many grades are still
+          coming.
+        */}
         <Figure
-          label="Ungraded points"
-          value={String(Math.round(result.remainingPoints))}
-          tally={{ to: Math.round(result.remainingPoints) }}
+          label="Waiting on a grade"
+          value={String(result.awaitingGrade)}
+          tally={{ to: result.awaitingGrade }}
+          hint={
+            result.awaitingGrade === 0
+              ? "everything due is marked"
+              : "handed in, past due, not marked yet"
+          }
         />
         <Figure
           label="Basis"

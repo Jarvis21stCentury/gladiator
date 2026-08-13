@@ -51,6 +51,24 @@ export interface WhatIfResult {
   /** Points still ungraded that the answer is solved over. */
   remainingPoints: number;
   /**
+   * Work whose due date has passed but which carries no score yet — grades
+   * still on the way.
+   *
+   * Distinct from `remainingPoints` in both unit and meaning. That is a points
+   * total over *everything* ungraded, most of which is simply not due yet, and
+   * it exists to solve the what-if arithmetic. This is a count of assignments
+   * you have already handed in and are waiting to hear back about, which is the
+   * question a student actually asks when a grade looks lower than expected.
+   *
+   * Work known not to have been submitted is excluded: that is missing, not
+   * pending, and it is already counted as overdue elsewhere. Canvas reports
+   * submission state, so a Canvas row marked unsubmitted is left out. HAC does
+   * not report it at all — it has only a Score column — so a past-due HAC row
+   * with no score is counted, which is the right reading far more often than
+   * not.
+   */
+  awaitingGrade: number;
+  /**
    * Percentage needed across all remaining work to land on the target. Above
    * 100 means it is not reachable; below 0 means it is already locked in.
    */
@@ -79,14 +97,31 @@ export async function calculateWhatIf({
     where: { id: courseId },
     include: {
       gradeCategories: { orderBy: { name: "asc" } },
+      /*
+       * Everything the school set, points or not.
+       *
+       * This used to be filtered to `pointsPossible > 0`, because the what-if
+       * arithmetic is a points calculation and a zero-point row contributes
+       * nothing to it. The waiting-on-a-grade count is not a points
+       * calculation, and inheriting that filter silently zeroed it: HAC gives
+       * no Total Points at all, so every one of its assignments was dropped
+       * before it could be counted. The points filter now lives in the loop,
+       * where only the arithmetic obeys it.
+       *
+       * Manual tasks are excluded here rather than in the loop — a task you
+       * wrote for yourself has no teacher on the other end of it, so it is
+       * neither a grade on the way nor part of a grade.
+       */
       assignments: {
-        where: { pointsPossible: { gt: 0 } },
+        where: { source: { not: "MANUAL" } },
         select: {
           id: true,
           title: true,
           pointsPossible: true,
           score: true,
           submitted: true,
+          dueAt: true,
+          source: true,
           gradeCategoryId: true,
         },
       },
@@ -134,8 +169,37 @@ export async function calculateWhatIf({
     percent: null,
   });
 
+  const now = new Date();
+  let awaitingGrade = 0;
+
   for (const assignment of course.assignments) {
     const points = assignment.pointsPossible ?? 0;
+
+    /*
+     * Past its due date, still unmarked — a grade on the way.
+     *
+     * Canvas knows whether something was handed in, so a Canvas row it reports
+     * as unsubmitted is missing work rather than pending work and is left out;
+     * it is already counted as overdue. HAC exposes no submission state at all,
+     * only a score, so a past-due HAC row with no score is counted.
+     */
+    const pastDue = assignment.dueAt !== null && assignment.dueAt < now;
+    const knownMissing =
+      assignment.source === "CANVAS" && assignment.submitted === false;
+
+    if (pastDue && assignment.score === null && !knownMissing) {
+      awaitingGrade += 1;
+    }
+
+    /*
+     * The arithmetic below is the part that needs points, and it is strict
+     * about it: a marked row with no Total Points would add its score to
+     * `earnedPoints` with nothing in `gradedPoints` to divide by, which reads
+     * as a grade above 100%. Rows without points are counted above and then
+     * left out of the sums.
+     */
+    if (points <= 0) continue;
+
     const key = hasWeights && assignment.gradeCategoryId ? assignment.gradeCategoryId : fallbackKey;
     const bucket = buckets.get(key) ?? buckets.get(fallbackKey)!;
 
@@ -202,6 +266,7 @@ export async function calculateWhatIf({
       currentPercent,
       categories,
       remainingPoints: 0,
+      awaitingGrade,
       requiredPercent: null,
       reachable: currentPercent !== null && currentPercent >= targetPercent,
       note: "There is no ungraded work left in this class — the grade is what it is.",
@@ -243,6 +308,7 @@ export async function calculateWhatIf({
       currentPercent,
       categories,
       remainingPoints,
+      awaitingGrade,
       requiredPercent: null,
       reachable: false,
       note: "The remaining work carries no weight, so it cannot move the grade.",
@@ -259,6 +325,7 @@ export async function calculateWhatIf({
     currentPercent,
     categories,
     remainingPoints,
+    awaitingGrade,
     requiredPercent,
     reachable: requiredPercent <= 100,
     note:

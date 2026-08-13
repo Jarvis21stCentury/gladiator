@@ -76,7 +76,15 @@ export default async function RootLayout({
     <html
       lang="en"
       className={`${archivo.variable} ${hanken.variable} ${dmMono.variable} h-full`}
-    >
+      /*
+       * The head script below adds `js` to this element's class list before
+       * React hydrates, so the client's className never matches the server's
+       * and React logged a hydration mismatch on every page load. Suppressing
+       * it here is what the flag is for: the difference is deliberate, and the
+       * alternative — adding the class after hydration — is the blank-page
+       * failure the script exists to avoid.
+       */
+      suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: ENABLE_MOTION }} />
         {/*
