@@ -15,8 +15,10 @@ export const SECTIONS: Section[] = [
   { href: "/", label: "Front page", note: "the state of things" },
   { href: "/classes", label: "Classes", note: "grades and outstanding work" },
   { href: "/calendar", label: "Timetable", note: "three weeks of pressure" },
-  { href: "/digest", label: "Digest", note: "tonight's notes" },
-  { href: "/review", label: "Review", note: "flashcards, when they're due" },
+  // Digest and Review were two nav items for one activity: notes are written
+  // from the day's material and cards are written from those notes, and neither
+  // page could see the other half.
+  { href: "/study", label: "Study", note: "tonight's notes and your cards" },
   { href: "/retro", label: "Retro", note: "the week, debriefed" },
   { href: "/routine", label: "Routine", note: "when you're actually free" },
 ];

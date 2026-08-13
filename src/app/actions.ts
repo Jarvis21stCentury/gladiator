@@ -369,7 +369,7 @@ export async function gradeFlashcard(
   ]);
 
   // The due counts on the review index and the class dossier are now stale.
-  revalidatePath("/review");
+  revalidatePath("/study");
   revalidatePath("/classes");
 
   return { ok: true, intervalDays: next.intervalDays };

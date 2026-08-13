@@ -347,7 +347,7 @@ function StudyLinks({
 
       <div className="flex flex-wrap items-center gap-2">
         {due > 0 ? (
-          <Link href={`/review/${view.id}`} className="control" data-active="true">
+          <Link href={`/study/${view.id}`} className="control" data-active="true">
             Review {due} card{due === 1 ? "" : "s"}
           </Link>
         ) : null}
@@ -360,7 +360,7 @@ function StudyLinks({
         ) : null}
 
         {due === 0 && total > 0 ? (
-          <Link href={`/review/${view.id}`} className="control">
+          <Link href={`/study/${view.id}`} className="control">
             {total} card{total === 1 ? "" : "s"}
           </Link>
         ) : null}
@@ -372,13 +372,13 @@ function StudyLinks({
         <Link
           href={
             view.latestNoteDate
-              ? `/digest?date=${formatSchoolDay(view.latestNoteDate)}&course=${view.id}`
-              : `/digest?course=${view.id}`
+              ? `/study?date=${formatSchoolDay(view.latestNoteDate)}&course=${view.id}`
+              : `/study?course=${view.id}`
           }
           className="control"
           data-active={due === 0 && uncarded === 0 ? "true" : undefined}
         >
-          Nightly digest
+          Tonight&apos;s notes
         </Link>
       </div>
 

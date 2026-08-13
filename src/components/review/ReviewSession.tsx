@@ -173,7 +173,7 @@ export function ReviewSession({
             >
               Check for more
             </button>
-            <Link href="/review" className="control">
+            <Link href="/study" className="control">
               All subjects
             </Link>
             <Link href={`/classes#course-${courseId}`} className="control">
