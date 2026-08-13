@@ -107,9 +107,10 @@ export async function logEffort(
 
    Two rules the actions below enforce:
 
-     1. Only MANUAL rows can be completed or deleted here. A Canvas assignment's
-        `submitted` flag is owned by Canvas — ticking it locally would silently
-        flip back on the next sync, which is worse than not offering it.
+     1. Only rows the student owns — MANUAL and COURSEWORK, see OWNED_SOURCES —
+        can be completed or deleted here. A Canvas assignment's `submitted` flag
+        is owned by Canvas: ticking it locally would silently flip back on the
+        next sync, which is worse than not offering it.
      2. A task must have a due date. Everything in this product is time and
         pressure; the queries that build every list filter on `dueAt`, so a task
         without one would save successfully and then be invisible.
@@ -186,6 +187,17 @@ export async function createTask(
   return { ok: true, message: `Added "${title}" to ${course.name}.` };
 }
 
+/**
+ * Rows the student owns, and may therefore tick off or delete.
+ *
+ * MANUAL is a task they wrote. COURSEWORK was read off a teacher's page by a
+ * model, which makes it a guess — and a guess the student cannot correct would
+ * poison every list it appears in the first time it is wrong. Neither is
+ * overwritten by a sync, so a local change to one actually sticks; Canvas and
+ * HAC own `submitted` on their own rows and would undo it overnight.
+ */
+const OWNED_SOURCES = new Set(["MANUAL", "COURSEWORK"]);
+
 /** Tick your own task off, or put it back. */
 export async function toggleTaskDone(formData: FormData): Promise<void> {
   const id = String(formData.get("taskId") ?? "");
@@ -197,7 +209,7 @@ export async function toggleTaskDone(formData: FormData): Promise<void> {
   });
 
   // Canvas owns `submitted` on its own rows: the next sync would overwrite this.
-  if (!task || task.source !== "MANUAL") return;
+  if (!task || !OWNED_SOURCES.has(task.source)) return;
 
   await prisma.assignment.update({
     where: { id: task.id },
@@ -219,8 +231,10 @@ export async function deleteTask(formData: FormData): Promise<void> {
     select: { id: true, source: true },
   });
 
-  // Deleting a Canvas row would only make it reappear on the next sync.
-  if (!task || task.source !== "MANUAL") return;
+  // Deleting a Canvas row would only make it reappear on the next sync. A
+  // coursework row is only recreated if the teacher's page still says so *and*
+  // the page text changes, so deleting one is a real decision that holds.
+  if (!task || !OWNED_SOURCES.has(task.source)) return;
 
   // Safe: the schema cascades effort logs and nulls the assignment link on
   // plan tasks and calendar blocks, so nothing is orphaned.

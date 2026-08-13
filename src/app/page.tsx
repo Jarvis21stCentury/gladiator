@@ -25,6 +25,7 @@ import { minutesLabel } from "@/lib/format";
 import { getTodaysPlan } from "@/lib/planner/daily-plan";
 import { STATUS_VAR } from "@/lib/status";
 import { getSystemState } from "@/lib/system-state";
+import { isOwnedTask } from "@/lib/tasks/ownership";
 
 /**
  * The front page.
@@ -74,11 +75,12 @@ function DueBlock({
               trailing={
                 item.pointsPossible !== null ? `${item.pointsPossible} pts` : null
               }
-              /* Only your own tasks get controls — Canvas owns `submitted` on
-                 its own rows. The presence of the controls is also how a task
-                 you added tells itself apart from one Canvas sent. */
+              /* Only rows you own get controls — Canvas owns `submitted` on its
+                 own rows. The presence of the controls is also how a task you
+                 added, or one read off a teacher's page, tells itself apart
+                 from one Canvas sent. */
               action={
-                item.source === "MANUAL" ? (
+                isOwnedTask(item.source) ? (
                   <TaskRowActions id={item.id} done={false} title={item.title} />
                 ) : null
               }

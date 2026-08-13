@@ -63,6 +63,10 @@ export interface CanvasPage {
   title: string;
   /** HTML. Present on the single-page endpoint, not in list responses. */
   body: string | null;
+  /** ISO timestamp. Present in list responses; how a daily page is spotted. */
+  updated_at?: string | null;
+  published?: boolean;
+  page_id?: number;
 }
 
 export interface CanvasAnnouncement {

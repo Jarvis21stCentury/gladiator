@@ -189,6 +189,31 @@ export class CanvasClient {
   }
 
   /**
+   * Every wiki page in a course, without bodies.
+   *
+   * The list endpoint omits `body`, which is what makes this cheap enough to
+   * call for every class: one request finds the page you want by title, and
+   * only that one is fetched in full. Needed because a teacher's daily
+   * "Coursework" page is very often not in a module at all — it is linked from
+   * the course nav — so scanning modules never sees it.
+   */
+  async getPages(courseId: number): Promise<CanvasPage[]> {
+    try {
+      const pages = await this.getAll<CanvasPage>(`/courses/${courseId}/pages`, {
+        sort: "updated_at",
+        order: "desc",
+      });
+
+      return pages.filter((page) => page.published !== false);
+    } catch (error) {
+      // Pages can be disabled per course. That is a normal configuration, not a
+      // failure, and it must not take down the rest of the ingest.
+      if (error instanceof CanvasAuthError) throw error;
+      return [];
+    }
+  }
+
+  /**
    * A wiki page's body. Returns null when the page is missing or restricted —
    * one unreadable page shouldn't fail a whole course's digest.
    */

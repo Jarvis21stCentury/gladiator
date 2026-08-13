@@ -108,6 +108,13 @@ enum AssignmentSource {
   /// Scraped from Home Access Center. HAC owns these the way Canvas owns its
   /// own: they are re-imported on every sync, so they are not user-deletable.
   HAC
+  /// Read off a teacher's daily "Coursework" page by a model.
+  ///
+  /// Inferred rather than reported, which is why it is its own source and not
+  /// folded into SYLLABUS: the student has to be able to tick it off or throw
+  /// it away, exactly like a task they wrote themselves, because sometimes it
+  /// will be wrong. Nothing here is authoritative.
+  COURSEWORK
 }
 
 /// Where a course's posted average came from.
@@ -398,6 +405,15 @@ enum DigestSourceKind {
   CANVAS_ANNOUNCEMENT
   TEXTBOOK_IMAGE
   TEXTBOOK_PDF
+  /// A teacher's daily "Coursework" page.
+  ///
+  /// Distinct from CANVAS_MODULE_ITEM because it behaves in the opposite way.
+  /// A module item is ingested once, the day it appears — its identity is its
+  /// id. A coursework page is one page that is *rewritten every day*, so its
+  /// identity has to be its content, and it is re-read whenever that changes.
+  /// Keying it like a module item meant it was read once in August and never
+  /// looked at again.
+  CANVAS_COURSEWORK
 }
 
 enum LessonNoteSourceType {

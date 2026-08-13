@@ -42,10 +42,23 @@ export function DigestGenerateButton({
         (entry: { status: string }) => entry.status === "failed",
       );
 
+      /*
+       * Tasks are reported because the run created rows on pages the student is
+       * not looking at. A silent side effect that adds homework to the planner
+       * is the kind of thing that reads as a bug the first time it is noticed.
+       */
+      const tasks: number = body.ingest?.tasksFromCoursework ?? 0;
+      const pages: number = body.ingest?.courseworkPagesRead ?? 0;
+
       setMessage(
-        failed.length > 0
-          ? `Wrote ${body.digest.notesWritten} note(s); ${failed.length} class(es) failed.`
-          : `Wrote ${body.digest.notesWritten} note(s).`,
+        [
+          `Wrote ${body.digest.notesWritten} note(s).`,
+          pages > 0 ? `Read ${pages} coursework page(s).` : null,
+          tasks > 0 ? `Added ${tasks} task(s).` : null,
+          failed.length > 0 ? `${failed.length} class(es) failed.` : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
       );
       router.refresh();
     } catch (error) {

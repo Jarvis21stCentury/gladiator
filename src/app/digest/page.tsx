@@ -33,6 +33,7 @@ export const dynamic = "force-dynamic";
 const SOURCE_LABELS: Record<string, string> = {
   CANVAS_MODULE_ITEM: "Canvas",
   CANVAS_ANNOUNCEMENT: "Announcement",
+  CANVAS_COURSEWORK: "Coursework page",
   TEXTBOOK_IMAGE: "Textbook photo",
   TEXTBOOK_PDF: "Textbook PDF",
 };

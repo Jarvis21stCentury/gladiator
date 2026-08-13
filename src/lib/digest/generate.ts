@@ -39,6 +39,8 @@ keyPoints:
 
 summary: two or three sentences telling the student what this class covered today and what matters most. Plain language, no preamble, no headers.
 
+When a teacher's coursework page for today is supplied, it is the authoritative account of what the class actually did — lead with it and let the other material fill in detail around it. Where they disagree, the coursework page is right.
+
 Never add facts that are not in the supplied material.`;
 
 /** Keep one class's material within a sane prompt size. */
@@ -49,6 +51,9 @@ function sourceLabel(kind: DigestSourceKind): string {
   return {
     CANVAS_MODULE_ITEM: "Canvas module",
     CANVAS_ANNOUNCEMENT: "Announcement",
+    // Named as the teacher's own page, because the model is told to prefer it:
+    // it is the one source that says what actually happened in the room.
+    CANVAS_COURSEWORK: "Teacher's coursework page for today",
     TEXTBOOK_IMAGE: "Textbook page (photo)",
     TEXTBOOK_PDF: "Textbook pages (PDF)",
   }[kind];
@@ -58,7 +63,8 @@ function resolveSourceType(kinds: DigestSourceKind[]): LessonNoteSourceType {
   const hasCanvas = kinds.some(
     (kind) =>
       kind === DigestSourceKind.CANVAS_MODULE_ITEM ||
-      kind === DigestSourceKind.CANVAS_ANNOUNCEMENT,
+      kind === DigestSourceKind.CANVAS_ANNOUNCEMENT ||
+      kind === DigestSourceKind.CANVAS_COURSEWORK,
   );
   const hasTextbook = kinds.some(
     (kind) =>
@@ -154,7 +160,19 @@ export async function generateDigest({
     let used = 0;
     const blocks: string[] = [];
 
-    for (const source of courseSources) {
+    /*
+     * The coursework page goes first, and not only for the model's benefit.
+     * The character budget below truncates from the end, so ordering decides
+     * what survives a class with a lot of material — and the teacher's own
+     * account of the day is the last thing that should be dropped.
+     */
+    const ordered = [...courseSources].sort((a, b) => {
+      const rank = (kind: DigestSourceKind) =>
+        kind === DigestSourceKind.CANVAS_COURSEWORK ? 0 : 1;
+      return rank(a.kind) - rank(b.kind);
+    });
+
+    for (const source of ordered) {
       const text = source.rawText.slice(0, MAX_CHARS_PER_SOURCE);
       if (used + text.length > MAX_CHARS_PER_CLASS) break;
 

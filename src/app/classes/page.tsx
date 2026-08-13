@@ -30,6 +30,7 @@ import {
   type WhatIfResult,
 } from "@/lib/grades/what-if";
 import { STATUS_VAR, levelForGrade } from "@/lib/status";
+import { isOwnedTask, taskOriginLabel } from "@/lib/tasks/ownership";
 
 /**
  * The ledger, scoped to one nine weeks.
@@ -199,6 +200,10 @@ function AssignmentRows({ items }: { items: ClassView["upcoming"] }) {
           submitted={assignment.submitted}
           assignmentId={assignment.submitted ? undefined : assignment.id}
           difficulty={assignment.difficulty}
+          /* Says where a row came from when it wasn't Canvas — a task read off
+             a teacher's page is inferred, and the student should be able to see
+             that before trusting it. */
+          meta={taskOriginLabel(assignment.source) ?? undefined}
           trailing={
             assignment.score !== null && assignment.pointsPossible
               ? `${assignment.score}/${assignment.pointsPossible}`
@@ -206,12 +211,12 @@ function AssignmentRows({ items }: { items: ClassView["upcoming"] }) {
                 ? "submitted"
                 : `~${assignment.estimatedMinutes}m`
           }
-          /* The class dossier is where a completed task can be un-ticked or
+          /* The class card is where a completed task can be un-ticked or
              deleted. Without this, marking one done on the front page was a
              one-way trip: it vanished from every list that filters on
              `submitted: false` and there was nowhere to change your mind. */
           action={
-            assignment.source === "MANUAL" ? (
+            isOwnedTask(assignment.source) ? (
               <TaskRowActions
                 id={assignment.id}
                 done={assignment.submitted}
