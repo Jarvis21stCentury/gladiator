@@ -139,15 +139,6 @@ export async function parseSyllabus({
   bytes,
   mediaType,
 }: ParseSyllabusOptions): Promise<ParseSyllabusResult> {
-  const course = await prisma.course.findUnique({
-    where: { id: courseId },
-    select: { id: true, name: true },
-  });
-
-  if (!course) {
-    throw new SyllabusParseError("That class no longer exists.");
-  }
-
   let text: string;
 
   if (mediaType === "application/pdf") {
@@ -165,6 +156,41 @@ export async function parseSyllabus({
   } else {
     throw new SyllabusParseError(
       `Unsupported file type "${mediaType}". Upload a PDF or a photo of the syllabus.`,
+    );
+  }
+
+  return parseSyllabusText({ courseId, fileName, text });
+}
+
+/**
+ * The same extraction, starting from text that is already text.
+ *
+ * Split out of `parseSyllabus` so a syllabus or assessment plan that lives in a
+ * shared Google Doc can go through the identical path as an uploaded PDF —
+ * same prompt, same schema, same Canvas-wins write rules, same SyllabusImport
+ * record. Two extractors that were supposed to agree would eventually not.
+ */
+export async function parseSyllabusText({
+  courseId,
+  fileName,
+  text,
+}: {
+  courseId: string;
+  fileName: string;
+  text: string;
+}): Promise<ParseSyllabusResult> {
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: { id: true, name: true },
+  });
+
+  if (!course) {
+    throw new SyllabusParseError("That class no longer exists.");
+  }
+
+  if (text.trim().length < 80) {
+    throw new SyllabusParseError(
+      "There was almost no readable text in that document.",
     );
   }
 

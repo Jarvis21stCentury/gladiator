@@ -4,6 +4,7 @@ import { toggleCourseHidden } from "@/app/actions";
 
 import { EffortLogForm } from "@/components/EffortLogForm";
 import { CardGenerateButton } from "@/components/review/CardGenerateButton";
+import { SyllabusScanButton } from "@/components/SyllabusScanButton";
 import { SyllabusUpload } from "@/components/SyllabusUpload";
 import { Docket, DocketRow } from "@/components/press/Docket";
 import { Figure } from "@/components/press/Figure";
@@ -970,6 +971,13 @@ export default async function ClassesPage({
                     ? `pace calibrated ×${calibration.biasFactor.toFixed(2)} from ${calibration.comparableLogs} logs`
                     : `${calibration.totalLogs} effort logs — ${Math.max(0, 3 - calibration.comparableLogs)} more to calibrate`}
                 </span>
+              </div>
+
+              {/* Page-level, because it reads every class at once. Sits with the
+                  target rather than inside a card for the same reason. */}
+              <div className="mb-6">
+                <p className="rubric mb-2">Tests and assessment plans</p>
+                <SyllabusScanButton />
               </div>
 
               <div className="flex flex-wrap items-center gap-3">

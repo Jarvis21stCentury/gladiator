@@ -232,6 +232,28 @@ export class CanvasClient {
     }
   }
 
+  /**
+   * The HTML of a course's Syllabus tab.
+   *
+   * Not part of the course list payload — `syllabus_body` has to be asked for
+   * by name on the single-course endpoint. It is where teachers most reliably
+   * link the assessment plan, so it is worth the extra request per class.
+   */
+  async getSyllabusBody(courseId: number): Promise<string | null> {
+    try {
+      const response = await this.request(
+        `${this.baseUrl}/api/v1/courses/${courseId}?include[]=syllabus_body`,
+      );
+
+      const course = (await response.json()) as { syllabus_body?: string | null };
+      return course.syllabus_body ?? null;
+    } catch (error) {
+      // A course with the syllabus tab disabled is a normal configuration.
+      if (error instanceof CanvasAuthError) throw error;
+      return null;
+    }
+  }
+
   /** Cheap round-trip to check the token before running a full sync. */
   async verifyToken(): Promise<void> {
     await this.request(`${this.baseUrl}/api/v1/users/self`);
