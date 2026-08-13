@@ -33,6 +33,9 @@ model Course {
   term                String?
   currentGradePercent Float?
 
+  /// Which system `currentGradePercent` came from. Null when there is no grade.
+  gradeSource GradeSource?
+
   /// Hidden from every list without being deleted.
   ///
   /// A Canvas enrolment is not the same thing as a class. Homeroom, a club, a
@@ -105,6 +108,21 @@ enum AssignmentSource {
   /// Scraped from Home Access Center. HAC owns these the way Canvas owns its
   /// own: they are re-imported on every sync, so they are not user-deletable.
   HAC
+}
+
+/// Where a course's posted average came from.
+///
+/// Two systems report a grade for the same class and they do not agree. HAC is
+/// the district's gradebook and its average is the one on the report card;
+/// Canvas shows whatever that teacher happens to keep in Canvas, which is often
+/// partial and sometimes nothing at all. Without this the page could show a
+/// number but not say whose it was — and a student asking "is this my real
+/// grade?" got no answer.
+enum GradeSource {
+  CANVAS
+  HAC
+  /// Typed in by hand, which outranks both syncs until it is cleared.
+  MANUAL
 }
 
 /// One row per course per day — powers grade trend detection.

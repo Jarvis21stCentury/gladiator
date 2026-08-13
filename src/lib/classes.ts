@@ -2,7 +2,7 @@ import "server-only";
 
 import { getCourseTrends, type CourseTrend } from "@/lib/analytics/trend";
 import { createEstimator } from "@/lib/effort/estimate";
-import type { AssignmentSource } from "@/generated/prisma/enums";
+import type { AssignmentSource, GradeSource } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import {
   currentGradingPeriod,
@@ -50,8 +50,16 @@ export interface ClassView {
   name: string;
   term: string | null;
   currentGradePercent: number | null;
+  /** Which system posted that grade. Null when there is none. */
+  gradeSource: GradeSource | null;
   /** False for a class added by hand — a sync will never touch it. */
   fromCanvas: boolean;
+  /** True when HAC knows this class at all, so the page can say why it has no average. */
+  fromHac: boolean;
+  /** Nightly digest notes written for this class, all time. */
+  noteCount: number;
+  /** The most recent day this class has a digest note for. */
+  latestNoteDate: Date | null;
   level: StatusLevel;
   trend: CourseTrend | null;
   struggles: ActiveStruggle[];
@@ -109,7 +117,8 @@ export async function getClassViews(): Promise<ClassesView> {
       _count: { _all: true },
     });
 
-  const [courses, trends, struggles, estimator, earlier, later] = await Promise.all([
+  const [courses, trends, struggles, estimator, earlier, later, hacKnown] =
+    await Promise.all([
     prisma.course.findMany({
       // Hidden classes are enrolments, not classes — see Course.hidden.
       where: { hidden: false },
@@ -139,6 +148,14 @@ export async function getClassViews(): Promise<ClassesView> {
         },
         gradeCategories: { orderBy: { weightPercent: "desc" } },
         syllabusImports: { orderBy: { createdAt: "desc" }, take: 1 },
+        // Enough to link straight to this class's most recent digest, and to
+        // say how much there is to read, without loading any note bodies.
+        lessonNotes: {
+          orderBy: { date: "desc" },
+          take: 1,
+          select: { date: true },
+        },
+        _count: { select: { lessonNotes: true } },
       },
     }),
     getCourseTrends(),
@@ -154,6 +171,20 @@ export async function getClassViews(): Promise<ClassesView> {
      */
     outsidePeriod("before"),
     outsidePeriod("after"),
+    /*
+     * Which classes HAC knows about.
+     *
+     * There is no `hacId` on Course — HAC is matched by name — so the honest
+     * test is whether the scraper has ever written an assignment for it. It
+     * lets the page distinguish the two reasons a grade is missing: HAC has
+     * this class and has not posted an average yet, versus HAC has never heard
+     * of it. Those need different sentences and the student can only act on one.
+     */
+    prisma.assignment.groupBy({
+      by: ["courseId"],
+      where: { source: "HAC" },
+      _count: { _all: true },
+    }),
   ]);
 
   const countBy = (rows: { courseId: string; _count: { _all: number } }[]) =>
@@ -161,6 +192,7 @@ export async function getClassViews(): Promise<ClassesView> {
 
   const earlierByCourse = countBy(earlier);
   const laterByCourse = countBy(later);
+  const hacCourses = new Set(hacKnown.map((row) => row.courseId));
 
   const classes = courses.map((course) => {
     const assignments: ClassAssignment[] = course.assignments.map((assignment) => {
@@ -215,7 +247,11 @@ export async function getClassViews(): Promise<ClassesView> {
       name: course.name,
       term: course.term,
       currentGradePercent: course.currentGradePercent,
+      gradeSource: course.gradeSource,
       fromCanvas: course.canvasId !== null,
+      fromHac: hacCourses.has(course.id),
+      noteCount: course._count.lessonNotes,
+      latestNoteDate: course.lessonNotes[0]?.date ?? null,
       level: maxLevel(
         levelForGrade(course.currentGradePercent),
         overdueCount > 0 ? "urgent" : "calm",

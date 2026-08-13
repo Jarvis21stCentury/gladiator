@@ -120,11 +120,25 @@ export async function runHacSync(): Promise<HacSyncResult> {
      * of a term anyway. Writing it as a zero would put a fabricated grade into
      * the trend, so it is left alone.
      */
-    if (course.percent !== null) {
+    /*
+     * HAC outranks Canvas here but not the student.
+     *
+     * This is the district's gradebook, so its average is the one that ends up
+     * on the report card — but a grade typed in by hand was typed for a reason
+     * (a teacher who posts late, a number the student was told in class), and a
+     * background sync silently replacing it is the behaviour that makes a tool
+     * untrustworthy. Clearing the manual grade hands the field back.
+     */
+    const existing = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { gradeSource: true },
+    });
+
+    if (course.percent !== null && existing?.gradeSource !== "MANUAL") {
       await prisma.$transaction([
         prisma.course.update({
           where: { id: courseId },
-          data: { currentGradePercent: course.percent },
+          data: { currentGradePercent: course.percent, gradeSource: "HAC" },
         }),
         prisma.gradeSnapshot.upsert({
           where: { courseId_date: { courseId, date: today } },

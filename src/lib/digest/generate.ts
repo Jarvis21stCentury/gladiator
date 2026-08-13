@@ -248,26 +248,61 @@ export async function generateDigest({
  * Everything needed to render the digest page for one day. `day` must already be
  * a normalised school day — see `schoolDay`.
  */
-export async function getDigestForDay(day: Date) {
-  const [notes, pendingSources, courses] = await Promise.all([
+/**
+ * One evening's notes, optionally narrowed to a single class.
+ *
+ * `courseId` exists so a class can link straight to its own reading. Without it
+ * the Classes page could only point at the whole digest and leave the student to
+ * find their class in it, which is not a link so much as a suggestion.
+ *
+ * When a class is named and has nothing that day, `otherDay` carries the most
+ * recent date it *does* have a note for. An empty page that cannot say where the
+ * notes actually are reads as a bug.
+ */
+export async function getDigestForDay(day: Date, courseId?: string) {
+  const forCourse = courseId ? { courseId } : {};
+
+  const [notes, pendingSources, courses, course, otherDay] = await Promise.all([
     prisma.lessonNote.findMany({
-      where: { date: day },
+      where: { date: day, ...forCourse },
       include: {
-        course: { select: { name: true } },
+        course: { select: { id: true, name: true } },
         sources: { select: { id: true, label: true, kind: true } },
       },
       orderBy: { course: { name: "asc" } },
     }),
     prisma.digestSource.findMany({
-      where: { date: day, includeInDigest: true, lessonNoteId: null },
+      where: { date: day, includeInDigest: true, lessonNoteId: null, ...forCourse },
       include: { course: { select: { name: true } } },
       orderBy: { createdAt: "asc" },
     }),
     prisma.course.findMany({
+      where: { hidden: false },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
+    courseId
+      ? prisma.course.findUnique({
+          where: { id: courseId },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve(null),
+    courseId
+      ? prisma.lessonNote.findFirst({
+          where: { courseId, date: { not: day } },
+          orderBy: { date: "desc" },
+          select: { date: true },
+        })
+      : Promise.resolve(null),
   ]);
 
-  return { date: day, notes, pendingSources, courses };
+  return {
+    date: day,
+    notes,
+    pendingSources,
+    courses,
+    /** The class this view is narrowed to, when it is. */
+    course,
+    otherDay: otherDay?.date ?? null,
+  };
 }

@@ -568,9 +568,12 @@ export async function setCourseGrade(
 
   // Empty clears the grade — distinct from a grade of zero.
   if (raw === "") {
+    // Clearing also drops the provenance, which is what hands the field back to
+    // the syncs — otherwise a cleared grade would stay MANUAL forever and HAC
+    // could never post one again.
     await prisma.course.update({
       where: { id: course.id },
-      data: { currentGradePercent: null },
+      data: { currentGradePercent: null, gradeSource: null },
     });
     revalidatePath("/classes");
     revalidatePath("/");
@@ -593,7 +596,7 @@ export async function setCourseGrade(
   await prisma.$transaction([
     prisma.course.update({
       where: { id: course.id },
-      data: { currentGradePercent: percent },
+      data: { currentGradePercent: percent, gradeSource: "MANUAL" },
     }),
     prisma.gradeSnapshot.upsert({
       where: { courseId_date: { courseId: course.id, date: today } },

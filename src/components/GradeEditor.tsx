@@ -15,9 +15,10 @@ import { setCourseGrade, type ActionResult } from "@/app/actions";
  * Saving writes a snapshot for today as well as the headline number, so the
  * grade trend keeps working; see `setCourseGrade`.
  *
- * A Canvas-backed class says so, because the next sync will overwrite whatever
- * is typed here the moment Canvas has a score of its own. Better to say that
- * plainly than to let a number quietly revert overnight.
+ * A number typed here now outranks both syncs and stays until it is cleared —
+ * `Course.gradeSource` records that it was set by hand, and neither Canvas nor
+ * HAC overwrites a MANUAL grade. This used to warn that Canvas would replace it
+ * on the next sync, which was true then and would be a lie now.
  */
 export function GradeEditor({
   courseId,
@@ -82,9 +83,8 @@ export function GradeEditor({
         </span>
       ) : (
         <span className="text-[0.75rem] text-ink-soft">
-          {fromCanvas
-            ? "Canvas will overwrite this once it has a score."
-            : "Blank clears it."}
+          Yours until you clear it — blank hands the class back to{" "}
+          {fromCanvas ? "Canvas and HAC" : "HAC"}.
         </span>
       )}
     </form>

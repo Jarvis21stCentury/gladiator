@@ -50,6 +50,28 @@ async function syncViaApi(
     );
     const gradePercent = enrollment?.computed_current_score ?? null;
 
+    /*
+     * Canvas may only post a grade where nothing better already exists.
+     *
+     * Three systems write this one field and they rank: what the student typed
+     * outranks the district gradebook, which outranks Canvas. HAC's average is
+     * the one on the report card — Canvas shows whatever that particular teacher
+     * keeps in Canvas, which is routinely partial and sometimes an entirely
+     * different number for the same class. Letting a sync order decide which
+     * grade the student sees meant the answer changed depending on which button
+     * was pressed last.
+     */
+    const existing = await prisma.course.findUnique({
+      where: { canvasId: course.id },
+      select: { gradeSource: true },
+    });
+
+    const mayWriteGrade =
+      gradePercent !== null &&
+      (existing?.gradeSource === null ||
+        existing?.gradeSource === undefined ||
+        existing.gradeSource === "CANVAS");
+
     const record = await prisma.course.upsert({
       where: { canvasId: course.id },
       create: {
@@ -57,6 +79,7 @@ async function syncViaApi(
         name: course.name,
         term: course.term?.name ?? null,
         currentGradePercent: gradePercent,
+        gradeSource: gradePercent === null ? null : "CANVAS",
       },
       update: {
         name: course.name,
@@ -70,15 +93,19 @@ async function syncViaApi(
          * on the next sync. Canvas wins when Canvas knows; it does not get to
          * overwrite with an absence.
          */
-        ...(gradePercent === null ? {} : { currentGradePercent: gradePercent }),
+        ...(mayWriteGrade
+          ? { currentGradePercent: gradePercent, gradeSource: "CANVAS" as const }
+          : {}),
       },
     });
 
     courseIdByCanvasId.set(course.id, record.id);
 
     // One snapshot per course per day. Re-syncing the same day overwrites rather
-    // than appending, so trend data stays one point per day.
-    if (gradePercent !== null) {
+    // than appending, so trend data stays one point per day. Gated on the same
+    // ranking as the grade itself: a trend built from two systems' numbers is a
+    // sawtooth that means nothing.
+    if (mayWriteGrade) {
       const date = todayUtc();
       await prisma.gradeSnapshot.upsert({
         where: { courseId_date: { courseId: record.id, date } },

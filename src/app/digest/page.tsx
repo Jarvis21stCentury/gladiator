@@ -46,13 +46,19 @@ function shiftDay(day: Date, days: number): string {
 export default async function NightlyDigestPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; course?: string }>;
 }) {
   const params = await searchParams;
   const day = parseSchoolDay(params.date ?? null);
-  const { notes, pendingSources, courses } = await getDigestForDay(day);
+  const { notes, pendingSources, courses, course, otherDay } =
+    await getDigestForDay(day, params.course || undefined);
 
   const dateParam = formatSchoolDay(day);
+
+  // Keep the class filter across the day nav, or paging back would silently
+  // drop it and land the reader in every class at once.
+  const withCourse = (date: string) =>
+    course ? `/digest?date=${date}&course=${course.id}` : `/digest?date=${date}`;
   const readableDate = day.toLocaleDateString(undefined, {
     weekday: "long",
     year: "numeric",
@@ -71,20 +77,25 @@ export default async function NightlyDigestPage({
   return (
     <main className="flex-1">
       <PageHeader
-        eyebrow={readableDate}
+        eyebrow={course ? `${course.name} · ${readableDate}` : readableDate}
         title="Nightly digest"
         purpose="Each night, the new material from your classes cut down to key points, so you read the notes instead of the textbook."
         meta={
           <nav className="flex flex-wrap items-center gap-2">
-            <Link href={`/digest?date=${shiftDay(day, -1)}`} className="control">
+            <Link href={withCourse(shiftDay(day, -1))} className="control">
               ← Prev day
             </Link>
-            <Link href="/digest" className="control">
+            <Link href={course ? `/digest?course=${course.id}` : "/digest"} className="control">
               Today
             </Link>
-            <Link href={`/digest?date=${shiftDay(day, 1)}`} className="control">
+            <Link href={withCourse(shiftDay(day, 1))} className="control">
               Next day →
             </Link>
+            {course ? (
+              <Link href={`/digest?date=${dateParam}`} className="control">
+                All classes
+              </Link>
+            ) : null}
           </nav>
         }
         contents={[
@@ -121,8 +132,35 @@ export default async function NightlyDigestPage({
           <div className="hang">
             <span aria-hidden="true" className="hidden lg:block" />
             <p className="prose text-ink-soft">
-              Canvas content is pulled automatically each evening. Add textbook
-              pages below if you want them included.
+              {course && otherDay ? (
+                <>
+                  Nothing for {course.name} on this day. Its most recent notes
+                  are from{" "}
+                  <Link
+                    href={`/digest?date=${formatSchoolDay(otherDay)}&course=${course.id}`}
+                    className="link"
+                  >
+                    {otherDay.toLocaleDateString(undefined, {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                      timeZone: "UTC",
+                    })}
+                  </Link>
+                  .
+                </>
+              ) : course ? (
+                /* Arrived from a class that has never had a digest built. The
+                   generic line below would tell them to wait for something that
+                   only happens when they press the button above it. */
+                <>
+                  No notes for {course.name}{" "}
+                  yet. Build tonight&apos;s digest above and its flashcards can
+                  be made from it.
+                </>
+              ) : (
+                "Canvas content is pulled automatically each evening. Add textbook pages below if you want them included."
+              )}
             </p>
           </div>
         ) : null}

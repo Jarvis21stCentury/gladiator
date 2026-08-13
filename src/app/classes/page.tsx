@@ -20,7 +20,9 @@ import { getHiddenCourses, getClassViews, type ClassView } from "@/lib/classes";
 import { courseStyle } from "@/lib/courses/color";
 import { getCalibration } from "@/lib/effort/estimate";
 import { getDeckSummaries, type DeckSummary } from "@/lib/flashcards/deck";
+import { formatSchoolDay } from "@/lib/digest/day";
 import { gradeLabel } from "@/lib/format";
+import { formatPoints, gpaFor } from "@/lib/grades/gpa";
 import { daysRemaining, type GradingPeriod } from "@/lib/grading-period";
 import {
   GRADE_TARGETS,
@@ -224,20 +226,194 @@ function AssignmentRows({ items }: { items: ClassView["upcoming"] }) {
 }
 
 /**
- * The once-a-term machinery, folded away.
+ * Where the grade actually came from, said plainly.
  *
- * Everything in here is setup: teaching the estimator your pace, handing the
- * parser a syllabus, minting cards. Useful, and never the reason you opened the
- * page.
+ * Two systems report a grade for the same class and they disagree: HAC is the
+ * district's gradebook and its average is the one on the report card, while
+ * Canvas shows whatever that teacher happens to keep there. A number with no
+ * attribution cannot answer the question the student is actually asking, which
+ * is "is this my real grade?"
  */
-function ClassSetup({
+const GRADE_SOURCE_LABEL: Record<string, string> = {
+  HAC: "from Home Access Center",
+  CANVAS: "from Canvas",
+  MANUAL: "you set this",
+};
+
+/**
+ * The class summary: what you're sitting at, and what it's worth.
+ *
+ * The grade is the reason anyone opens a page called Classes, so it leads — and
+ * it is immediately followed by the translation nobody wants to do in their
+ * head. See lib/grades/gpa.ts for why the unweighted figure is the one printed
+ * large and the weighted one always carries its assumption on its face.
+ */
+function GradeBlock({ view }: { view: ClassView }) {
+  const level = levelForGrade(view.currentGradePercent);
+  const gpa = gpaFor(view.currentGradePercent, view.name);
+
+  return (
+    <div>
+      <p className="rubric">Grade in class</p>
+
+      {view.currentGradePercent !== null && gpa ? (
+        <>
+          <p
+            className="fig fig--xl mt-1"
+            style={level === "calm" ? undefined : { color: STATUS_VAR[level] }}
+          >
+            {gradeLabel(view.currentGradePercent)}
+          </p>
+
+          <p className="mt-2 text-[0.95rem]">
+            <span className="display display--sm">{gpa.letter}</span>
+            <span className="text-ink-soft">
+              {" "}
+              · {formatPoints(gpa.points)} GPA
+            </span>
+          </p>
+
+          {gpa.rigor ? (
+            <p className="docket mt-1">
+              {formatPoints(gpa.weightedPoints)} weighted · {gpa.rigor.label}{" "}
+              +{formatPoints(gpa.rigor.bonus)}
+            </p>
+          ) : null}
+
+          <p className="docket mt-2 opacity-70">
+            {view.gradeSource
+              ? GRADE_SOURCE_LABEL[view.gradeSource]
+              : "source unknown"}
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="fig fig--xl mt-1 opacity-25">—</p>
+          {/*
+            Two different absences, and only one of them is actionable. HAC
+            having the class but no average is the normal state at the start of
+            a term and there is nothing to do about it; HAC never having heard
+            of the class means the sync did not match it and the student can fix
+            that by typing a number in.
+          */}
+          <p className="docket mt-2 max-w-[34ch] leading-relaxed">
+            {view.fromHac
+              ? "HAC hasn't posted an average for this class yet."
+              : "No average posted yet."}
+          </p>
+        </>
+      )}
+
+      <div className="mt-3">
+        <GradeEditor
+          courseId={view.id}
+          courseName={view.name}
+          percent={view.currentGradePercent}
+          fromCanvas={view.fromCanvas}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Studying, promoted out of the drawer.
+ *
+ * Cards and the nightly digest were both buried in "Class setup" alongside the
+ * syllabus uploader, which put the two things you do *every day* in the same
+ * place as the thing you do once a term. They are the whole reason the digest
+ * and review features exist, so each class now says plainly what it has to study
+ * and links straight at it.
+ */
+function StudyLinks({
   view,
   deck,
 }: {
   view: ClassView;
   deck: DeckSummary | undefined;
 }) {
-  const cards = deck && deck.total > 0 ? deck : null;
+  const due = deck?.due ?? 0;
+  const total = deck?.total ?? 0;
+  const uncarded = deck?.uncardedNotes ?? 0;
+
+  return (
+    <div className="mt-7 border-t border-rule pt-5">
+      <p className="rubric mb-3">Study</p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {due > 0 ? (
+          <Link href={`/review/${view.id}`} className="control" data-active="true">
+            Review {due} card{due === 1 ? "" : "s"}
+          </Link>
+        ) : null}
+
+        {uncarded > 0 ? (
+          <CardGenerateButton
+            courseId={view.id}
+            label={`Make cards from ${uncarded} note${uncarded === 1 ? "" : "s"}`}
+          />
+        ) : null}
+
+        {due === 0 && total > 0 ? (
+          <Link href={`/review/${view.id}`} className="control">
+            {total} card{total === 1 ? "" : "s"}
+          </Link>
+        ) : null}
+
+        {/* The primary action here when there is nothing to review and nothing
+            to make cards from — with no notes, the digest is the only next step,
+            and an unaccented row of controls would not say which one to press.
+            One accented thing per region, and this is it. */}
+        <Link
+          href={
+            view.latestNoteDate
+              ? `/digest?date=${formatSchoolDay(view.latestNoteDate)}&course=${view.id}`
+              : `/digest?course=${view.id}`
+          }
+          className="control"
+          data-active={due === 0 && uncarded === 0 ? "true" : undefined}
+        >
+          Nightly digest
+        </Link>
+      </div>
+
+      {/*
+        One line, and only when there is genuinely nothing — otherwise the
+        controls above already say the state and this would restate it.
+      */}
+      {total === 0 && uncarded === 0 ? (
+        <p className="docket mt-3 max-w-[40ch] leading-relaxed">
+          Cards are written from this class&apos;s nightly notes. Build a digest
+          first and they can be made from it.
+        </p>
+      ) : (
+        <p className="docket mt-3">
+          {total} card{total === 1 ? "" : "s"}
+          {due === 0 && deck?.nextDueAt
+            ? ` · next on ${deck.nextDueAt.toLocaleDateString([], {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+              })}`
+            : ""}
+          {view.noteCount > 0
+            ? ` · ${view.noteCount} note${view.noteCount === 1 ? "" : "s"}`
+            : ""}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The once-a-term machinery, folded away.
+ *
+ * Everything left in here is setup: teaching the estimator your pace, handing
+ * the parser a syllabus. Useful, and never the reason you opened the page.
+ * Flashcards and the digest used to live here too and no longer do — they are
+ * daily work and were invisible behind a summary line.
+ */
+function ClassSetup({ view }: { view: ClassView }) {
   const loggable = [...view.upcoming, ...view.recent];
 
   return (
@@ -246,44 +422,9 @@ function ClassSetup({
 
       <div className="grid gap-x-10 gap-y-8 pb-2 pt-3 lg:grid-cols-2">
         <div>
-          <p className="rubric mb-3">Flashcards</p>
-
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-            {deck && deck.due > 0 ? (
-              <Link
-                href={`/review/${view.id}`}
-                className="control"
-                data-active="true"
-              >
-                Review {deck.due} card{deck.due === 1 ? "" : "s"}
-              </Link>
-            ) : null}
-
-            <span className="docket">
-              {cards
-                ? `${cards.total} card${cards.total === 1 ? "" : "s"}${
-                    cards.due === 0 && cards.nextDueAt
-                      ? ` · next on ${cards.nextDueAt.toLocaleDateString([], {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}`
-                      : ""
-                  }`
-                : "No cards yet."}
-            </span>
-
-            {deck && deck.uncardedNotes > 0 ? (
-              <CardGenerateButton
-                courseId={view.id}
-                label={`Make cards from ${deck.uncardedNotes} note${deck.uncardedNotes === 1 ? "" : "s"}`}
-              />
-            ) : null}
-          </div>
-
           {loggable.length > 0 ? (
             <>
-              <p className="rubric mb-3 mt-8">Log effort</p>
+              <p className="rubric mb-3">Log effort</p>
               <EffortLogForm
                 assignments={loggable.map((assignment) => ({
                   id: assignment.id,
@@ -292,7 +433,11 @@ function ClassSetup({
                 }))}
               />
             </>
-          ) : null}
+          ) : (
+            <p className="docket">
+              Nothing to log — this appears once there is work in this class.
+            </p>
+          )}
         </div>
 
         <div>
@@ -321,24 +466,17 @@ function ClassSetup({
           ) : null}
 
           <p className="rubric mb-3 mt-8">This class</p>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-            <GradeEditor
-              courseId={view.id}
-              courseName={view.name}
-              percent={view.currentGradePercent}
-              fromCanvas={view.fromCanvas}
-            />
-            {/* Not a delete: the next sync would recreate it. */}
-            <form action={toggleCourseHidden}>
-              <input type="hidden" name="courseId" value={view.id} />
-              <button
-                type="submit"
-                className="text-[0.75rem] text-ink-soft underline underline-offset-2 hover:text-[color:var(--flare)]"
-              >
-                Hide this class
-              </button>
-            </form>
-          </div>
+          {/* Not a delete: the next sync would recreate it. The grade editor
+              moved up into the summary, where the grade is. */}
+          <form action={toggleCourseHidden}>
+            <input type="hidden" name="courseId" value={view.id} />
+            <button
+              type="submit"
+              className="text-[0.75rem] text-ink-soft underline underline-offset-2 hover:text-[color:var(--flare)]"
+            >
+              Hide this class
+            </button>
+          </form>
         </div>
       </div>
     </details>
@@ -394,6 +532,64 @@ function ClassHead({ view }: { view: ClassView }) {
   );
 }
 
+/** How many assignments a card shows before you have to ask for the rest. */
+const PREVIEW_ROWS = 4;
+
+/**
+ * The work, in a column of its own.
+ *
+ * Shows what is next and hides the tail behind a disclosure. Seventeen rows is
+ * not a list you read, it is a list you scroll past — but it is also the list
+ * that has to be *there*, because "show me everything in this class" is a real
+ * question with no other answer in the product. So: the next few always, the
+ * rest one click away, closed work with them.
+ */
+function AssignmentPanel({ view }: { view: ClassView }) {
+  const preview = view.upcoming.slice(0, PREVIEW_ROWS);
+  const rest = view.upcoming.slice(PREVIEW_ROWS);
+  const hidden = rest.length + view.recent.length;
+
+  return (
+    <div>
+      <div className="mb-2 flex items-baseline justify-between gap-4">
+        <p className="rubric">Due this nine weeks</p>
+        <span className="docket text-[0.6875rem] opacity-70">
+          {view.upcoming.length}
+        </span>
+      </div>
+
+      {view.upcoming.length === 0 ? (
+        <p className="docket">Nothing due in this nine weeks.</p>
+      ) : (
+        <AssignmentRows items={preview} />
+      )}
+
+      {hidden > 0 ? (
+        <details className="disclosure mt-1">
+          <summary>
+            {rest.length > 0
+              ? `All ${view.upcoming.length} assignments`
+              : `${view.recent.length} closed`}
+          </summary>
+
+          <div className="pb-2 pt-2">
+            {rest.length > 0 ? <AssignmentRows items={rest} /> : null}
+
+            {view.recent.length > 0 ? (
+              <>
+                <p className="rubric mb-2 mt-5">Closed</p>
+                <AssignmentRows items={view.recent} />
+              </>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
+
+      <Elsewhere view={view} />
+    </div>
+  );
+}
+
 /** One line naming work this page is deliberately not showing. */
 function Elsewhere({ view }: { view: ClassView }) {
   const parts = [
@@ -432,89 +628,92 @@ function Dossier({
     >
       <ClassHead view={view} />
 
-      <div className="card__body">
-        {view.struggles.length > 0 ? (
-          <div className="mb-6 flex flex-col gap-3">
-            {view.struggles.map((struggle) => (
-              <div
-                key={struggle.id}
-                className="flex gap-3"
-                style={
-                  { "--status": STATUS_VAR[struggle.level] } as React.CSSProperties
-                }
-              >
-                <span className="mt-1.5">
-                  <Mark level={struggle.level} />
-                </span>
-                <p className="prose text-[0.9rem]">
-                  <span
-                    className="display display--sm"
-                    style={{ color: STATUS_VAR[struggle.level] }}
-                  >
-                    {struggle.title}.
-                  </span>{" "}
-                  {struggle.description}
+      {/*
+        Summary on the left, work on the right.
+
+        The two halves answer different questions and the reader almost never
+        wants both at once: "how am I doing in this class" is a glance, "what do
+        I actually have to do" is a list. Stacked, the list buried the summary
+        under seventeen rows; side by side, the grade stays on screen while the
+        work is scrolled.
+      */}
+      <div className="card__body grid gap-x-10 gap-y-8 lg:grid-cols-12">
+        <div className="min-w-0 lg:col-span-5">
+          <GradeBlock view={view} />
+
+          {view.struggles.length > 0 ? (
+            <div className="mt-6 flex flex-col gap-3">
+              {view.struggles.map((struggle) => (
+                <div
+                  key={struggle.id}
+                  className="flex gap-3"
+                  style={
+                    { "--status": STATUS_VAR[struggle.level] } as React.CSSProperties
+                  }
+                >
+                  <span className="mt-1.5">
+                    <Mark level={struggle.level} />
+                  </span>
+                  <p className="prose text-[0.9rem]">
+                    <span
+                      className="display display--sm"
+                      style={{ color: STATUS_VAR[struggle.level] }}
+                    >
+                      {struggle.title}.
+                    </span>{" "}
+                    {struggle.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {whatIfHasContent(whatIf) ? (
+            <div className="mt-6">
+              <WhatIf result={whatIf!} />
+            </div>
+          ) : null}
+
+          {hasTrace ? (
+            <div className="mt-6">
+              <p className="rubric mb-2">Grade over time</p>
+              <Trace points={trend!.points} level={trend!.level} />
+              {trend && trend.changePercent !== null ? (
+                <p
+                  className="docket mt-2"
+                  style={
+                    trend.level === "calm"
+                      ? undefined
+                      : { color: STATUS_VAR[trend.level] }
+                  }
+                >
+                  {TREND_MARK[trend.direction]}{" "}
+                  {`${trend.changePercent >= 0 ? "+" : ""}${trend.changePercent.toFixed(1)} pts`}
+                  {trend.consecutiveDrops >= 2
+                    ? ` · down ${trend.consecutiveDrops} checks`
+                    : ""}
                 </p>
-              </div>
-            ))}
-          </div>
-        ) : null}
+              ) : null}
+            </div>
+          ) : null}
 
-        {whatIfHasContent(whatIf) ? (
-          <div className="mb-6">
-            <WhatIf result={whatIf!} />
-          </div>
-        ) : null}
+          {whatIf && whatIf.mode === "weighted" ? (
+            <div className="mt-6">
+              <p className="rubric mb-2">Categories</p>
+              <CategoryTable result={whatIf} />
+            </div>
+          ) : null}
 
-        {hasTrace ? (
-          <div className="mb-6">
-            <p className="rubric mb-2">Grade over time</p>
-            <Trace points={trend!.points} level={trend!.level} />
-            {trend && trend.changePercent !== null ? (
-              <p
-                className="docket mt-2"
-                style={
-                  trend.level === "calm" ? undefined : { color: STATUS_VAR[trend.level] }
-                }
-              >
-                {TREND_MARK[trend.direction]}{" "}
-                {`${trend.changePercent >= 0 ? "+" : ""}${trend.changePercent.toFixed(1)} pts`}
-                {trend.consecutiveDrops >= 2
-                  ? ` · down ${trend.consecutiveDrops} checks`
-                  : ""}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+          <StudyLinks view={view} deck={deck} />
+        </div>
 
-        {whatIf && whatIf.mode === "weighted" ? (
-          <div className="mb-6">
-            <p className="rubric mb-2">Categories</p>
-            <CategoryTable result={whatIf} />
-          </div>
-        ) : null}
-
-        {view.upcoming.length > 0 ? (
-          <>
-            <p className="rubric mb-2">Due this nine weeks</p>
-            <AssignmentRows items={view.upcoming} />
-          </>
-        ) : (
-          <p className="docket">Nothing due in this nine weeks.</p>
-        )}
-
-        {view.recent.length > 0 ? (
-          <>
-            <p className="rubric mb-2 mt-6">Closed</p>
-            <AssignmentRows items={view.recent} />
-          </>
-        ) : null}
-
-        <Elsewhere view={view} />
+        <div className="min-w-0 lg:col-span-7">
+          <AssignmentPanel view={view} />
+        </div>
       </div>
 
       <div className="px-[0.875rem]">
-        <ClassSetup view={view} deck={deck} />
+        <ClassSetup view={view} />
       </div>
     </article>
   );
@@ -536,9 +735,34 @@ function QuietClass({
   return (
     <article id={`course-${view.id}`} className="card scroll-mt-24">
       <ClassHead view={view} />
-      <div className="px-[0.875rem]">
+
+      {/* Even a silent class keeps its study links and its grade line. Those are
+          the two things that are true whether or not anything is due, and
+          burying them behind a disclosure here was what made flashcards feel
+          like they did not exist for half the timetable. */}
+      <div className="card__body pt-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+          <p className="docket">
+            {view.currentGradePercent !== null && view.gradeSource
+              ? GRADE_SOURCE_LABEL[view.gradeSource]
+              : view.fromHac
+                ? "HAC hasn't posted an average yet."
+                : "No average posted yet."}
+          </p>
+          <GradeEditor
+            courseId={view.id}
+            courseName={view.name}
+            percent={view.currentGradePercent}
+            fromCanvas={view.fromCanvas}
+          />
+        </div>
+
         <Elsewhere view={view} />
-        <ClassSetup view={view} deck={deck} />
+        <StudyLinks view={view} deck={deck} />
+      </div>
+
+      <div className="px-[0.875rem]">
+        <ClassSetup view={view} />
       </div>
     </article>
   );
