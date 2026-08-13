@@ -686,3 +686,91 @@ export async function setSchoolYear(
 
   return { ok: true, message: "School year updated." };
 }
+
+/* ==========================================================================
+   FLASHCARDS BY HAND
+
+   Cards were only ever *generated* — written by a model from the key points in
+   a nightly digest. That chain works, but it has a prerequisite the UI never
+   admitted to: with no digest notes there are no uncarded notes, so the
+   "Make cards from N notes" button rendered nowhere, and a student looking for
+   somewhere to make a flashcard correctly concluded there wasn't one.
+
+   Writing your own is also just a thing a flashcard tool should do. It needs no
+   API key, which makes it the only part of studying that works before the model
+   is configured.
+   ========================================================================== */
+
+/** Long enough for a real question, short enough to read on one card. */
+const MAX_CARD_SIDE = 600;
+
+/**
+ * Manual cards need a `signature` like every other card, because that column is
+ * unique and is what stops a regeneration stacking duplicate decks. Keyed on the
+ * normalised question so writing the same card twice is caught and reported
+ * rather than throwing a Prisma constraint error at the student.
+ */
+function manualCardSignature(courseId: string, front: string): string {
+  const normalised = front.toLowerCase().replace(/\s+/g, " ").trim();
+  return `manual:${courseId}:${normalised}`;
+}
+
+export async function createFlashcard(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const courseId = String(formData.get("courseId") ?? "");
+  const front = String(formData.get("front") ?? "").trim();
+  const back = String(formData.get("back") ?? "").trim();
+  const hint = String(formData.get("hint") ?? "").trim();
+
+  if (!courseId) return { ok: false, message: "Pick a class." };
+  if (!front) return { ok: false, message: "The card needs a question." };
+  if (!back) return { ok: false, message: "The card needs an answer." };
+
+  if (front.length > MAX_CARD_SIDE || back.length > MAX_CARD_SIDE) {
+    return {
+      ok: false,
+      message: `Keep each side under ${MAX_CARD_SIDE} characters — a card you can't read at a glance isn't one you'll answer.`,
+    };
+  }
+
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: { id: true, name: true },
+  });
+
+  if (!course) return { ok: false, message: "That class no longer exists." };
+
+  const signature = manualCardSignature(course.id, front);
+
+  const existing = await prisma.flashcard.findUnique({
+    where: { signature },
+    select: { id: true },
+  });
+
+  if (existing) {
+    return { ok: false, message: "You already have a card asking that." };
+  }
+
+  await prisma.flashcard.create({
+    data: {
+      courseId: course.id,
+      front,
+      back,
+      hint: hint || null,
+      signature,
+      // Marks it as hand-written, and keeps it clear of `db:clear-demo`, which
+      // deletes on `provider: "seed"`.
+      provider: "manual",
+      model: "manual",
+      // Left at the schema defaults: due immediately, interval 0, ease 2.5. A
+      // new card should come up in the very next sitting.
+    },
+  });
+
+  revalidatePath("/study");
+  revalidatePath("/classes");
+
+  return { ok: true, message: `Added a card to ${course.name}.` };
+}

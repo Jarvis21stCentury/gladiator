@@ -3,6 +3,7 @@ import Link from "next/link";
 import { DigestGenerateButton } from "@/components/DigestGenerateButton";
 import { TextbookUpload } from "@/components/TextbookUpload";
 import { CardGenerateButton } from "@/components/review/CardGenerateButton";
+import { FlashcardForm } from "@/components/review/FlashcardForm";
 import { Docket } from "@/components/press/Docket";
 import { PageHeader } from "@/components/press/PageHeader";
 import { Plate } from "@/components/press/Plate";
@@ -168,7 +169,9 @@ export default async function StudyPage({
             className="rubric"
             style={totalDue > 0 ? { color: STATUS_VAR.warming } : undefined}
           >
-            {totalDue > 0 ? `${totalDue} cards due` : "nothing due"}
+            {totalDue > 0
+              ? `${totalDue} card${totalDue === 1 ? "" : "s"} due`
+              : "nothing due"}
           </p>
         }
       />
@@ -224,23 +227,62 @@ export default async function StudyPage({
             </Docket>
           )}
 
-          {/* Notes that have not been turned into cards yet. This is the join
-              between the two halves, and it only exists because they are now
-              one page. */}
-          {readyToCard.length > 0 ? (
-            <div className="mt-[var(--block)]">
-              <p className="rubric mb-2">Notes ready to become cards</p>
-              <div className="flex flex-wrap gap-x-6 gap-y-3">
-                {readyToCard.map((deck) => (
-                  <CardGenerateButton
-                    key={deck.courseId}
-                    courseId={deck.courseId}
-                    label={`${deck.courseName} — ${deck.uncardedNotes} note${deck.uncardedNotes === 1 ? "" : "s"}`}
-                  />
-                ))}
-              </div>
+          {/*
+            Every class and its next move, always rendered.
+
+            This block used to appear only when some class had notes waiting —
+            which meant that with no notes at all, there was no way anywhere in
+            the product to make a flashcard, at exactly the moment a new student
+            goes looking for one. A row that says "build notes first" is a
+            worse-looking page and a far better one to use.
+          */}
+          <div className="mt-[var(--block)]">
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+              <p className="rubric">Your cards</p>
+              <FlashcardForm courses={courses} />
             </div>
-          ) : null}
+
+            <Docket>
+              {decks.map((deck) => (
+                <li
+                  key={deck.courseId}
+                  className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-rule/70 py-2.5 last:border-b-0"
+                >
+                  <span
+                    className="dot"
+                    style={courseStyle(deck.courseName)}
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[0.875rem]">
+                    {deck.courseName}
+                  </span>
+
+                  <span className="docket shrink-0 text-[0.6875rem] opacity-70">
+                    {deck.total > 0
+                      ? `${deck.total} card${deck.total === 1 ? "" : "s"}`
+                      : "no cards"}
+                  </span>
+
+                  {deck.uncardedNotes > 0 ? (
+                    <CardGenerateButton
+                      courseId={deck.courseId}
+                      label={`Make from ${deck.uncardedNotes} note${deck.uncardedNotes === 1 ? "" : "s"}`}
+                    />
+                  ) : (
+                    <FlashcardForm courses={courses} courseId={deck.courseId} />
+                  )}
+                </li>
+              ))}
+            </Docket>
+
+            {readyToCard.length === 0 ? (
+              <p className="docket mt-3 max-w-[62ch] leading-relaxed">
+                Cards are also written for you from each night&apos;s notes —
+                build a digest below and a &ldquo;make from N notes&rdquo; button
+                appears on every class that has them.
+              </p>
+            ) : null}
+          </div>
         </div>
       </section>
 
