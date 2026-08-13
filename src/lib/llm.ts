@@ -82,10 +82,33 @@ function getProvider(): LlmProvider {
 
 /**
  * Model IDs are env-overridable so a model can be changed without a deploy of
- * this file. The defaults are the current recommended pair per provider.
+ * this file.
+ *
+ * ## Both OpenAI tiers point at gpt-4o-mini, deliberately
+ *
+ * `strong` used to be gpt-4o, and on this workload it was about 85% of the
+ * bill: the nightly digest is the only *frequent* strong call — once per class
+ * per school day — and gpt-4o costs roughly 16× gpt-4o-mini per input token and
+ * 16× per output token. Running the whole app on mini takes it from a few
+ * dollars a month to well under one, and this is a personal tool where that
+ * ratio matters more than the last increment of prose quality.
+ *
+ * **The two tiers are kept, not collapsed.** `quality` still selects between two
+ * named slots that happen to resolve to the same model today, so restoring the
+ * old behaviour is one environment variable — `LLM_MODEL_STRONG=gpt-4o` — and
+ * not a hunt through every call site. Deleting the distinction would have made
+ * that decision permanent and invisible.
+ *
+ * What is actually given up: ARCHITECTURE.md reserves the strong tier for the
+ * three things a person *reads* rather than scans — the daily-plan narrative,
+ * the nightly digest summary and the weekly retro. Those will be written a
+ * little more plainly. Everything else in the app was already on mini.
+ *
+ * Anthropic's pair is untouched and is *not* a cheap default: it puts the
+ * digest on Opus. Set LLM_MODEL_STRONG before switching providers.
  */
 const DEFAULT_MODELS: Record<LlmProvider, Record<LlmQuality, string>> = {
-  openai: { fast: "gpt-4o-mini", strong: "gpt-4o" },
+  openai: { fast: "gpt-4o-mini", strong: "gpt-4o-mini" },
   anthropic: { fast: "claude-haiku-4-5", strong: "claude-opus-5" },
 };
 

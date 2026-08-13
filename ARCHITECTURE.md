@@ -25,7 +25,9 @@ Single-user, personal tool. No accounts system, no multi-tenant auth, no other s
 
 ## LLM usage guidance
 
-Use a cheap/fast model for routine, structured tasks: struggle-flag classification, workload scoring. Reserve a stronger model for tasks where writing quality actually matters: the daily-plan narrative, the nightly lesson digest summary, and the weekly retro. At personal-use call volume this should run a few cents a day — set a soft monthly spend cap as a backstop, not because it's expected to be needed.
+Use a cheap/fast model for routine, structured tasks: struggle-flag classification, workload scoring. A stronger tier exists for the three things a person reads rather than scans — the daily-plan narrative, the nightly lesson digest summary, and the weekly retro.
+
+**Both OpenAI tiers currently resolve to `gpt-4o-mini`.** The strong tier was gpt-4o and came to roughly 85% of the bill, because the digest is the only frequent strong call — once per class per school day. The two tiers are kept rather than collapsed so restoring quality is one env var (`LLM_MODEL_STRONG=gpt-4o`) rather than a hunt through call sites. Set a soft monthly spend cap as a backstop regardless.
 
 ## Rough data model
 
