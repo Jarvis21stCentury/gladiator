@@ -2,6 +2,7 @@ import "server-only";
 
 import { getCourseTrends } from "@/lib/analytics/trend";
 import { prisma } from "@/lib/prisma";
+import { getSchoolYear, withinSchoolYear } from "@/lib/school-year";
 import { getWorkloadForecast } from "@/lib/workload/forecast";
 import type { StruggleType } from "@/generated/prisma/enums";
 
@@ -57,10 +58,14 @@ function plural(count: number, one: string, many = `${one}s`): string {
  * for ("real patterns", not a red dot on every late item).
  */
 async function detectMissedClusters(): Promise<DetectedStruggle[]> {
+  const year = await getSchoolYear();
+
   const missed = await prisma.assignment.findMany({
     where: {
       submitted: false,
       dueAt: { gte: daysAgo(MISS_WINDOW_DAYS), lt: new Date() },
+      course: { hidden: false },
+      AND: withinSchoolYear(year),
     },
     orderBy: { dueAt: "desc" },
     include: { course: { select: { id: true, name: true } } },
@@ -140,12 +145,18 @@ async function detectGradeSlides(): Promise<DetectedStruggle[]> {
 async function detectSubmissionSilence(): Promise<DetectedStruggle[]> {
   const since = daysAgo(SILENCE_WINDOW_DAYS);
 
+  const year = await getSchoolYear();
+
   const courses = await prisma.course.findMany({
+    where: { hidden: false },
     select: {
       id: true,
       name: true,
       assignments: {
-        where: { dueAt: { gte: since, lt: new Date() } },
+        where: {
+          dueAt: { gte: since, lt: new Date() },
+          AND: withinSchoolYear(year),
+        },
         select: { id: true, title: true, submitted: true, dueAt: true },
       },
     },
@@ -211,8 +222,23 @@ async function detectWorkloadSpikes(): Promise<DetectedStruggle[]> {
 
 /** Overdue work accumulating across every class rather than being cleared. */
 async function detectOverduePileup(): Promise<DetectedStruggle[]> {
+  const year = await getSchoolYear();
+
+  /*
+   * Only this year's work counts as a pileup.
+   *
+   * Canvas keeps every assignment a student has ever had, so without the
+   * bound this flagged 55 "overdue" items — most of them from 2021 — and
+   * raised a permanent, unclearable warning about work that stopped mattering
+   * years ago.
+   */
   const overdue = await prisma.assignment.findMany({
-    where: { submitted: false, dueAt: { lt: new Date() } },
+    where: {
+      submitted: false,
+      dueAt: { lt: new Date() },
+      course: { hidden: false },
+      AND: withinSchoolYear(year),
+    },
     orderBy: { dueAt: "asc" },
     include: { course: { select: { name: true } } },
   });

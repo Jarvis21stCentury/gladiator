@@ -9,6 +9,7 @@ import {
   rankOf,
   type StatusLevel,
 } from "@/lib/status";
+import { getSchoolYear, withinSchoolYear } from "@/lib/school-year";
 import { getWorkloadForecast, type WorkloadForecast } from "@/lib/workload/forecast";
 
 /**
@@ -134,21 +135,32 @@ export async function getAmbientLevel(): Promise<StatusLevel> {
  * and nothing derived: the class list with its colours, and the count of work
  * that is genuinely late. Anything heavier here would be paid for on the digest
  * and the retro, which do not otherwise touch assignments at all.
+ *
+ * It has to apply the same two filters the page bodies do, and for a while it
+ * did not: the sidebar listed every hidden enrolment and reported 55 overdue
+ * assignments — every unsubmitted Canvas row back to 2021 — while the page
+ * beside it correctly showed a handful. The shell is not exempt from the rules
+ * just because it is cheap.
  */
 export async function getShellData(): Promise<{
   level: StatusLevel;
   overdue: number;
   courses: { id: string; name: string }[];
 }> {
+  const year = await getSchoolYear();
+
   const [level, overdue, courses] = await Promise.all([
     getAmbientLevel(),
     prisma.assignment.count({
       where: {
         submitted: false,
         dueAt: { lt: new Date() },
+        course: { hidden: false },
+        AND: withinSchoolYear(year),
       },
     }),
     prisma.course.findMany({
+      where: { hidden: false },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
