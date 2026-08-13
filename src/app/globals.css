@@ -627,6 +627,23 @@ body {
   position: relative;
 }
 
+/*
+ * A plate that must fit the box it is in.
+ *
+ * Tailwind's `truncate` alone does nothing here: `.plate` is an inline-block
+ * that sizes to its text, and the actual words live in a block child, so the
+ * ellipsis has to be asked for on both or a long class name simply runs under
+ * the card's border. That is what "AP Computer Science Prin YR (HAMILTON," did
+ * on a phone — clipped mid-word with no ellipsis to say it had been.
+ */
+.plate--fit,
+.plate--fit .plate__face {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .plate__rule {
   display: block;
   height: 2px;
@@ -816,6 +833,62 @@ body {
 .control:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* ---------- Disclosure ----------
+   The machinery a class needs once and then never again: uploading a syllabus,
+   logging effort, generating cards. Printed flat, those three blocks plus their
+   explanations were most of a class's height and all of its noise — eight
+   classes' worth of setup forms standing between the reader and the one thing
+   they came for, which is what is due. Collapsed, each is a single quiet line.
+
+   Native <details>, so it works with no JavaScript, is keyboard-operable and
+   findable by the browser's own find-in-page (which expands it). */
+
+.disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  padding: 0.5rem 0;
+  color: var(--ink-soft);
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  /* Both spellings: the pseudo-element is WebKit's, the property is everyone
+     else's, and without them the default triangle sits outside the flex row. */
+  list-style: none;
+  transition: color var(--t-micro) var(--strike);
+}
+
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure > summary:hover,
+.disclosure > summary:focus-visible {
+  color: var(--accent);
+}
+
+/* A ruled cross that loses its vertical stroke when open — the same
+   straightedge gesture as everything else here, at the smallest scale. */
+.disclosure > summary::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  background:
+    linear-gradient(currentColor, currentColor) center / 100% 1px no-repeat,
+    linear-gradient(currentColor, currentColor) center / 1px 100% no-repeat;
+  transition: background-size var(--t-strike) var(--strike);
+}
+
+.disclosure[open] > summary::before {
+  background-size:
+    100% 1px,
+    1px 0;
 }
 
 /* Inline links. A hairline at rest; under pressure the word and its rule both

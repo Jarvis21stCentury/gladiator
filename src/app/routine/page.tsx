@@ -1,9 +1,11 @@
 import { deleteRoutineBlock, seedTypicalWeek } from "@/app/actions";
 import { RoutineForm } from "@/components/RoutineForm";
+import { Docket } from "@/components/press/Docket";
 import { PageHeader } from "@/components/press/PageHeader";
 import { Rule } from "@/components/press/Rule";
 import { SectionHead } from "@/components/press/SectionHead";
 import { minutesLabel } from "@/lib/format";
+import { currentGradingPeriod, gradingPeriods } from "@/lib/grading-period";
 import {
   formatClock12,
   freeMinutes,
@@ -52,6 +54,7 @@ const KIND_COLOR: Record<string, string> = {
 export default async function RoutinePage() {
   const [routine, year] = await Promise.all([getRoutine(), getSchoolYear()]);
   const empty = routine.length === 0;
+  const current = currentGradingPeriod(year);
 
   const week = DAYS.map((day) => {
     const resolved = resolveDay(routine, day.value);
@@ -179,6 +182,48 @@ export default async function RoutinePage() {
             end={toISO(year.end)}
             configured={year.configured}
           />
+
+          {/*
+            The four nine weeks these dates produce, shown so the derivation is
+            checkable rather than a black box. The Classes page scopes itself to
+            whichever one contains today and rolls over on its own; if a
+            boundary looks wrong, the fix is the two dates above, not a setting
+            per quarter. See lib/grading-period.ts for why they are derived.
+          */}
+          <div className="mt-6">
+            <p className="rubric mb-2">Nine weeks</p>
+            <Docket>
+              {gradingPeriods(year).map((period) => {
+                const here = period.index === current.index;
+
+                return (
+                  <li
+                    key={period.index}
+                    className="flex items-baseline gap-3 border-b border-rule/70 py-2 last:border-b-0"
+                  >
+                    <span
+                      className="min-w-0 flex-1 text-[0.875rem]"
+                      style={here ? { color: "var(--accent)" } : undefined}
+                    >
+                      {period.label}
+                      {here ? " · now" : ""}
+                    </span>
+                    <span className="docket text-[0.6875rem] opacity-70">
+                      {period.start.toLocaleDateString([], {
+                        month: "short",
+                        day: "numeric",
+                      })}{" "}
+                      –{" "}
+                      {period.end.toLocaleDateString([], {
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </span>
+                  </li>
+                );
+              })}
+            </Docket>
+          </div>
         </div>
 
         <Rule className="mt-[var(--section)]" />

@@ -38,6 +38,16 @@ export interface WhatIfInput {
   courseId: string;
   /** Desired final percentage, 0–100. */
   targetPercent: number;
+  /**
+   * The marking period to solve inside.
+   *
+   * A Texas grade is a fact about one nine weeks and resets when it closes, so
+   * solving over the whole year answers a question the report card never asks —
+   * and once a period has passed, its work is locked and cannot move the grade
+   * the student is actually looking at. Optional, because the algebra is the
+   * same either way and a caller that genuinely wants the year can omit it.
+   */
+  window?: { start: Date; end: Date };
 }
 
 export interface WhatIfResult {
@@ -92,6 +102,7 @@ function normaliseWeights(categories: CategoryBreakdown[]): CategoryBreakdown[] 
 export async function calculateWhatIf({
   courseId,
   targetPercent,
+  window,
 }: WhatIfInput): Promise<WhatIfResult | null> {
   const course = await prisma.course.findUnique({
     where: { id: courseId },
@@ -113,7 +124,12 @@ export async function calculateWhatIf({
        * neither a grade on the way nor part of a grade.
        */
       assignments: {
-        where: { source: { not: "MANUAL" } },
+        where: {
+          source: { not: "MANUAL" },
+          ...(window
+            ? { AND: [{ dueAt: { gte: window.start } }, { dueAt: { lte: window.end } }] }
+            : {}),
+        },
         select: {
           id: true,
           title: true,

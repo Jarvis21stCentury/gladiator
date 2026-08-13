@@ -106,7 +106,7 @@ Figures are always tabular (`.fig`), so columns of numbers align and a counting 
 **The six pages still read differently on purpose** — a product where every page is the same stack of cards feels templated:
 
 - **Front page** — verdict, a metric strip, the workload chart, then everything due.
-- **Classes** — every class on one comparable scale, then a dossier per class.
+- **Classes** — every class on one comparable scale, then a card per class, scoped to the nine weeks you are in. Two rules hold this page together and it fell apart once without them: **a block with nothing in it does not render** (no "no cards yet", no empty trace, no what-if that hands the target back as the answer), and **classes with nothing happening are grouped, not repeated**. Setup — syllabus, effort, cards, hide — lives behind a `.disclosure`, because a once-a-term action should not sit between the reader and their homework. Printed flat with placeholders, this page was 11.6 screens on a day when it had almost nothing to say.
 - **Timetable** — three weeks of seven days, so weekday rhythm is visible on its own.
 - **Digest** — one measure of prose, nothing between the reader and the words.
 - **Retro** — the week as evidence first, prose underneath.

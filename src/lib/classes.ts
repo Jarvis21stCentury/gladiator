@@ -4,6 +4,11 @@ import { getCourseTrends, type CourseTrend } from "@/lib/analytics/trend";
 import { createEstimator } from "@/lib/effort/estimate";
 import type { AssignmentSource } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import {
+  currentGradingPeriod,
+  withinGradingPeriod,
+  type GradingPeriod,
+} from "@/lib/grading-period";
 import { getSchoolYear, withinSchoolYear } from "@/lib/school-year";
 import { levelForDueDate, levelForGrade, maxLevel, type StatusLevel } from "@/lib/status";
 import { getActiveStruggles, type ActiveStruggle } from "@/lib/struggles/engine";
@@ -18,9 +23,6 @@ import { getActiveStruggles, type ActiveStruggle } from "@/lib/struggles/engine"
  * actively misleading, which is the failure mode the whole colour language
  * exists to avoid.
  */
-
-/** Recent past work stays visible so it can have effort logged against it. */
-const LOOKBACK_DAYS = 21;
 
 export interface ClassAssignment {
   id: string;
@@ -60,6 +62,20 @@ export interface ClassView {
   lastSyllabusImport: { fileName: string; createdAt: Date; datesFound: number } | null;
   /** Minutes logged against this class, all time. */
   minutesLogged: number;
+  /**
+   * Unfinished work outside the current nine weeks, so scoping the page to one
+   * marking period never *hides* anything — it only stops leading with it.
+   */
+  outstandingLater: number;
+  overdueEarlier: number;
+  /** True when this class has nothing at all in the current period. */
+  quiet: boolean;
+}
+
+export interface ClassesView {
+  /** The nine weeks everything below is scoped to. */
+  period: GradingPeriod;
+  classes: ClassView[];
 }
 
 /** Classes that have been hidden, so the page can offer them back. */
@@ -73,14 +89,27 @@ export async function getHiddenCourses(): Promise<
   });
 }
 
-export async function getClassViews(): Promise<ClassView[]> {
+export async function getClassViews(): Promise<ClassesView> {
   const now = new Date();
-  const since = new Date(now);
-  since.setDate(since.getDate() - LOOKBACK_DAYS);
 
   const year = await getSchoolYear();
+  const period = currentGradingPeriod(year, now);
 
-  const [courses, trends, struggles, estimator] = await Promise.all([
+  /** Unfinished work in the year but outside this period, on one side or the other. */
+  const outsidePeriod = (side: "before" | "after") =>
+    prisma.assignment.groupBy({
+      by: ["courseId"],
+      where: {
+        submitted: false,
+        course: { hidden: false },
+        dueAt:
+          side === "before" ? { lt: period.start } : { gt: period.end },
+        AND: withinSchoolYear(year),
+      },
+      _count: { _all: true },
+    });
+
+  const [courses, trends, struggles, estimator, earlier, later] = await Promise.all([
     prisma.course.findMany({
       // Hidden classes are enrolments, not classes — see Course.hidden.
       where: { hidden: false },
@@ -88,19 +117,20 @@ export async function getClassViews(): Promise<ClassView[]> {
       include: {
         assignments: {
           /*
-           * This school year only, and nothing undated.
+           * The current nine weeks only, and nothing undated.
            *
-           * Canvas hands over every assignment from every course a student has
-           * ever been enrolled in — here, 204 of them, 56 due before this year
-           * started and 111 with no due date at all. A dossier listing four
-           * years of history is not a dossier, and an undated assignment cannot
-           * be late, planned or scheduled; every list in this product keys off
-           * a due date.
+           * This used to be "the school year, minus a 21-day lookback", which
+           * produced a page nobody could read: eight classes' worth of work
+           * from August to May in one column. A Texas grade is a fact about one
+           * marking period and resets when it closes, so the period is the
+           * honest unit — and it means the page rolls itself over every nine
+           * weeks instead of growing all year.
+           *
+           * Undated work is excluded by the bound and that is intended: Canvas
+           * carries 111 undated rows here, and an assignment with no date
+           * cannot be late, planned or scheduled.
            */
-          where: {
-            dueAt: { gte: since },
-            AND: withinSchoolYear(year),
-          },
+          where: { AND: withinGradingPeriod(period) },
           orderBy: { dueAt: "asc" },
           include: {
             gradeCategory: { select: { name: true } },
@@ -114,9 +144,25 @@ export async function getClassViews(): Promise<ClassView[]> {
     getCourseTrends(),
     getActiveStruggles(),
     createEstimator(),
+    /*
+     * Unfinished work in the rest of the year, counted per class.
+     *
+     * Scoping a page to one period is only safe if it can still say what it is
+     * not showing. Without these, work due in November would simply be absent
+     * in October with nothing to indicate it existed — the same silent-omission
+     * failure as the sidebar reporting a count its own page contradicted.
+     */
+    outsidePeriod("before"),
+    outsidePeriod("after"),
   ]);
 
-  return courses.map((course) => {
+  const countBy = (rows: { courseId: string; _count: { _all: number } }[]) =>
+    new Map(rows.map((row) => [row.courseId, row._count._all]));
+
+  const earlierByCourse = countBy(earlier);
+  const laterByCourse = countBy(later);
+
+  const classes = courses.map((course) => {
     const assignments: ClassAssignment[] = course.assignments.map((assignment) => {
       const loggedMinutes = assignment.effortLogs.reduce(
         (sum, log) => sum + log.actualMinutes,
@@ -196,6 +242,21 @@ export async function getClassViews(): Promise<ClassView[]> {
         (sum, assignment) => sum + (assignment.loggedMinutes ?? 0),
         0,
       ),
+      outstandingLater: laterByCourse.get(course.id) ?? 0,
+      overdueEarlier: earlierByCourse.get(course.id) ?? 0,
+      /*
+       * Nothing to say about this class right now. The page uses this to
+       * collapse it to a single line instead of printing a full dossier of
+       * empty scaffolding — which is what eight untouched classes looked like
+       * on the first day of term, and why this page became unreadable.
+       */
+      quiet:
+        upcoming.length === 0 &&
+        recent.length === 0 &&
+        courseStruggles.length === 0 &&
+        course.currentGradePercent === null,
     };
   });
+
+  return { period, classes };
 }
