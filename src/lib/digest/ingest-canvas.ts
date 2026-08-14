@@ -4,7 +4,7 @@ import { CanvasClient } from "@/lib/canvas/client";
 import { getCanvasConfig, hasApiCredentials } from "@/lib/canvas/config";
 import { prisma } from "@/lib/prisma";
 import { DigestSourceKind } from "@/generated/prisma/enums";
-import { courseworkExternalId, findCourseworkPage, sliceDay } from "./coursework";
+import { courseworkExternalId, rankCourseworkPages, sliceDay } from "./coursework";
 import { extractCourseworkTasks } from "./coursework-tasks";
 import { schoolDay } from "./day";
 import { htmlToText as toText } from "./html";
@@ -17,6 +17,9 @@ import { htmlToText as toText } from "./html";
  * not by trusting timestamps — Canvas doesn't reliably expose an updated_at on
  * module items, and an id we've never seen is a sound definition of new.
  */
+
+/** Coursework pages fetched per course before settling on one. */
+const MAX_COURSEWORK_CANDIDATES = 8;
 
 /** Item types that carry teachable content worth distilling. */
 const CONTENT_TYPES = new Set(["Page", "File", "ExternalUrl", "Assignment"]);
@@ -102,23 +105,49 @@ export async function ingestCanvasContent(
    */
   for (const course of courses) {
     try {
-      // Both the Pages index and module Page items — this district's template
-      // hides the index, and the weekly coursework pages live in modules.
-      const page = findCourseworkPage(
+      /*
+       * Pick the coursework page that covers *today*, not the first one named
+       * like coursework.
+       *
+       * A class organised by unit has a page per unit — Chemistry's list will
+       * grow to twelve — and they all match the title rules equally. Choosing
+       * by title alone would pin the course to Unit 1 for the whole year while
+       * the class moved on. So candidates are tried in title order and the
+       * first whose content carries today's date wins; if none does, the best
+       * titled page with readable content is used, which is the right answer
+       * for a page that only ever shows the current week.
+       */
+      const candidates = rankCourseworkPages(
         (await client.getAllPageRefs(course.canvasId)).map((ref) => ({
           url: ref.url,
           title: ref.title,
         })),
-      );
-      if (!page) continue;
+      ).slice(0, MAX_COURSEWORK_CANDIDATES);
 
-      const full = await client.getPage(course.canvasId, page.url);
-      if (!full?.body) continue;
+      let page: { url: string; title: string } | null = null;
+      let slice: { text: string; dated: boolean } | null = null;
 
-      const slice = sliceDay(toText(full.body), day);
-      // Empty means the page is split by day and today is not on it yet — the
-      // teacher has not posted. Reading the rest would digest the whole term.
-      if (slice.text.trim().length < 40) continue;
+      for (const candidate of candidates) {
+        const body = await client.getPage(course.canvasId, candidate.url);
+        if (!body?.body) continue;
+
+        const attempt = sliceDay(toText(body.body), day);
+        if (attempt.text.trim().length < 40) continue;
+
+        // Dated for today is decisive; anything else is only a fallback.
+        if (attempt.dated) {
+          page = candidate;
+          slice = attempt;
+          break;
+        }
+
+        if (!page) {
+          page = candidate;
+          slice = attempt;
+        }
+      }
+
+      if (!page || !slice) continue;
 
       const externalId = courseworkExternalId(page.url, slice.text);
 

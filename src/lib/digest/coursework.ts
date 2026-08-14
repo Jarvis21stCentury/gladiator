@@ -94,7 +94,20 @@ export interface PageLike {
  * "Weekly Agenda 2026", and both win over nothing.
  */
 export function findCourseworkPage<T extends PageLike>(pages: T[]): T | null {
-  let best: { page: T; rank: number } | null = null;
+  return rankCourseworkPages(pages)[0] ?? null;
+}
+
+/**
+ * Every candidate, best title first.
+ *
+ * Plural because one title is not enough to choose between "Unit 1", "Unit 2"
+ * and "Unit 3": they rank identically, so the first one found would stay the
+ * course's coursework page for the whole year while the class moved on without
+ * it. The caller fetches these in order and keeps the one whose content
+ * actually covers today — see the ingest.
+ */
+export function rankCourseworkPages<T extends PageLike>(pages: T[]): T[] {
+  const scored: { page: T; rank: number }[] = [];
 
   for (const page of pages) {
     const title = normaliseTitle(page.title ?? "");
@@ -113,12 +126,12 @@ export function findCourseworkPage<T extends PageLike>(pages: T[]): T | null {
             : -1;
 
       if (rank === -1) continue;
-      if (!best || rank < best.rank) best = { page, rank };
+      scored.push({ page, rank });
       break;
     }
   }
 
-  return best?.page ?? null;
+  return scored.sort((a, b) => a.rank - b.rank).map((entry) => entry.page);
 }
 
 /**
