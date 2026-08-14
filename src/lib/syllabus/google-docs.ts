@@ -20,18 +20,36 @@
  * the URL parsing can be tested on its own.
  */
 
-/** Google file kinds worth reading, and how each exports as text. */
-const EXPORTS: { kind: string; path: string; format: string }[] = [
-  { kind: "document", path: "document", format: "txt" },
-  // Assessment plans are very often a spreadsheet — one row per unit, a column
-  // of dates. CSV keeps the row structure, which the extractor needs.
-  { kind: "spreadsheets", path: "spreadsheets", format: "csv" },
+/**
+ * Google file kinds worth reading, and how each exports as text.
+ *
+ * Note the two URL shapes. Docs and Sheets take the format as a query
+ * parameter; Slides takes it as a path segment. That difference is why
+ * presentations were written off here as unreadable — the query form 404s for
+ * them — and it was wrong: a lesson deck exports as clean text, and for several
+ * of these classes the deck *is* the lesson.
+ */
+const EXPORTS: { kind: string; url: (id: string) => string }[] = [
+  {
+    kind: "document",
+    url: (id) => `https://docs.google.com/document/d/${id}/export?format=txt`,
+  },
+  {
+    // Assessment plans are very often a spreadsheet — one row per unit, a
+    // column of dates. CSV keeps the row structure, which the extractor needs.
+    kind: "spreadsheets",
+    url: (id) => `https://docs.google.com/spreadsheets/d/${id}/export?format=csv`,
+  },
+  {
+    kind: "presentation",
+    url: (id) => `https://docs.google.com/presentation/d/${id}/export/txt`,
+  },
 ];
 
 export interface GoogleFileRef {
   /** The file id from the URL. */
   id: string;
-  /** "document" or "spreadsheets". */
+  /** "document", "spreadsheets" or "presentation". */
   kind: string;
   /** The URL it was found at, for reporting. */
   href: string;
@@ -91,8 +109,6 @@ export function findGoogleFiles(html: string): GoogleFileRef[] {
   for (const match of html.matchAll(pattern)) {
     const [href, kind, id] = match;
 
-    // Presentations have no reliable text export; recording the link without
-    // pretending it can be read is more honest than a silent skip.
     if (!EXPORTS.some((entry) => entry.kind === kind)) continue;
 
     if (!found.has(id)) found.set(id, { id, kind, href });
@@ -154,7 +170,7 @@ export async function fetchGoogleFileText(file: GoogleFileRef): Promise<string> 
   const entry = EXPORTS.find((option) => option.kind === file.kind);
   if (!entry) throw new GoogleDocError("Unsupported Google file type.", "empty");
 
-  const url = `https://docs.google.com/${entry.path}/d/${file.id}/export?format=${entry.format}`;
+  const url = entry.url(file.id);
 
   let response: Response;
 
