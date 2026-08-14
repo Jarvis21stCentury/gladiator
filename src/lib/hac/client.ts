@@ -166,6 +166,78 @@ async function request(
  * Parsing is somebody else's job (`parse.ts`), so a district whose markup
  * differs can be fixed without touching any of this.
  */
+/**
+ * Sign in and fetch one arbitrary HAC page.
+ *
+ * Split out of `fetchHacGradesHtml` because the grades page is not the only one
+ * worth reading: the student's schedule lives at Classes.aspx and carries the
+ * period, room, teacher and — the reason this exists — the days each class
+ * actually meets, which is the only authoritative answer to "is this an A day
+ * or a B day for me".
+ */
+export async function fetchHacPage(
+  credentials: HacCredentials,
+  path: string,
+): Promise<string> {
+  const base = credentials.baseUrl.replace(/\/+$/, "");
+  const jar = new CookieJar();
+  await signIn(base, jar, credentials);
+
+  const { response, body } = await request(`${base}${path}`, jar, {
+    method: "GET",
+  });
+
+  if (!response.ok || looksLikeLoginPage(body)) {
+    throw new HacError(
+      `Signed in, but ${path} could not be read.`,
+      "shape",
+    );
+  }
+
+  return body;
+}
+
+/** The login postback, shared by every page fetch. */
+async function signIn(
+  base: string,
+  jar: CookieJar,
+  credentials: HacCredentials,
+): Promise<void> {
+  const loginUrl = `${base}/HomeAccess/Account/LogOn`;
+  const { body: loginPage } = await request(loginUrl, jar);
+
+  const token = hiddenField(loginPage, "__RequestVerificationToken");
+  const database = hiddenField(loginPage, "Database") ?? "10";
+
+  const form = new URLSearchParams({
+    "LogOnDetails.UserName": credentials.username,
+    "LogOnDetails.Password": credentials.password,
+    Database: database,
+    SCKTY00328510CustomEnabled: "False",
+    SCKTY00436568CustomEnabled: "False",
+    tempUN: "",
+    tempPW: "",
+  });
+
+  if (token) form.set("__RequestVerificationToken", token);
+
+  const { body: afterLogin } = await request(loginUrl, jar, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Referer: loginUrl,
+    },
+    body: form.toString(),
+  });
+
+  if (looksLikeLoginPage(afterLogin)) {
+    throw new HacError(
+      "HAC rejected that username or password. Check them in a browser first — repeated failures can lock the account.",
+      "auth",
+    );
+  }
+}
+
 export async function fetchHacGradesHtml(
   credentials: HacCredentials,
 ): Promise<string> {
