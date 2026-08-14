@@ -7,7 +7,16 @@ import { DigestSourceKind } from "@/generated/prisma/enums";
 import { courseworkExternalId, rankCourseworkPages, sliceDay } from "./coursework";
 import { extractCourseworkTasks } from "./coursework-tasks";
 import { schoolDay } from "./day";
-import { htmlToText as toText } from "./html";
+import {
+  htmlToText as toText,
+  htmlToTextWithLinks,
+  stripLinkMarkers,
+} from "./html";
+import {
+  fetchGoogleFileText,
+  findGoogleFiles,
+  GoogleDocError,
+} from "@/lib/syllabus/google-docs";
 
 /**
  * Pulls what's new in Canvas into digest sources. FEATURES.md: "Canvas content is
@@ -20,6 +29,15 @@ import { htmlToText as toText } from "./html";
 
 /** Coursework pages fetched per course before settling on one. */
 const MAX_COURSEWORK_CANDIDATES = 8;
+
+/**
+ * Linked documents followed out of one day's coursework.
+ *
+ * A lesson day links a deck or two, not ten. The cap is there for the page that
+ * links its whole term inside a single undated block — without it, one badly
+ * structured page would pull down forty decks and hand the model a term.
+ */
+const MAX_LINKED_DOCS = 3;
 
 /** Item types that carry teachable content worth distilling. */
 const CONTENT_TYPES = new Set(["Page", "File", "ExternalUrl", "Assignment"]);
@@ -131,7 +149,9 @@ export async function ingestCanvasContent(
         const body = await client.getPage(course.canvasId, candidate.url);
         if (!body?.body) continue;
 
-        const attempt = sliceDay(toText(body.body), day);
+        // Sliced with hrefs preserved, so the decks that survive the cut are
+        // the ones that sat inside today's section rather than the term's.
+        const attempt = sliceDay(htmlToTextWithLinks(body.body), day);
         if (attempt.text.trim().length < 40) continue;
 
         // Dated for today is decisive; anything else is only a fallback.
@@ -149,7 +169,40 @@ export async function ingestCanvasContent(
 
       if (!page || !slice) continue;
 
-      const externalId = courseworkExternalId(page.url, slice.text);
+      /*
+       * Follow the documents today's section links to.
+       *
+       * This is where the lesson actually is for several of these classes: the
+       * coursework page says "Notes ( Presentation )" and the presentation
+       * holds the content. Reading the page alone captured the table of
+       * contents and called it the lesson.
+       *
+       * Only links inside today's slice are followed, which is the whole reason
+       * the hrefs were carried through it — a unit page links a deck per day,
+       * and following all of them would put the entire unit into one night's
+       * notes.
+       */
+      const linked: string[] = [];
+
+      for (const file of findGoogleFiles(slice.text).slice(0, MAX_LINKED_DOCS)) {
+        try {
+          const text = await fetchGoogleFileText(file);
+          linked.push(`--- linked ${file.kind} ---\n${text}`);
+        } catch (error) {
+          // A deck shared with the class only is normal and must not cost the
+          // page it was linked from.
+          if (!(error instanceof GoogleDocError)) throw error;
+        }
+      }
+
+      // Markers are stripped now that the links have been resolved: the stored
+      // text is what a model and a person read, and a bare url in the middle of
+      // a sentence helps neither.
+      const readable = [stripLinkMarkers(slice.text), ...linked]
+        .join("\n\n")
+        .trim();
+
+      const externalId = courseworkExternalId(page.url, readable);
 
       const already = await prisma.digestSource.findUnique({
         where: { externalId },
@@ -163,8 +216,15 @@ export async function ingestCanvasContent(
           courseId: course.id,
           kind: DigestSourceKind.CANVAS_COURSEWORK,
           externalId,
-          label: slice.dated ? `${page.title} (today)` : page.title,
-          rawText: slice.text,
+          label: [
+            slice.dated ? `${page.title} (today)` : page.title,
+            linked.length > 0
+              ? `+ ${linked.length} linked doc${linked.length === 1 ? "" : "s"}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" "),
+          rawText: readable,
         },
       });
 
@@ -181,7 +241,10 @@ export async function ingestCanvasContent(
       try {
         const tasks = await extractCourseworkTasks({
           courseId: course.id,
-          text: slice.text,
+          // The resolved text, not the marked-up slice: raw urls are noise to
+          // the extractor, and homework is often announced on the deck rather
+          // than on the page that links it.
+          text: readable,
           day,
         });
 

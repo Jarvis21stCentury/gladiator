@@ -50,3 +50,32 @@ export function htmlToText(html: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
+
+/**
+ * The same text, with each link's destination kept inline as `⟨url⟩`.
+ *
+ * `htmlToText` throws hrefs away, and for a coursework page that is the one
+ * thing that must survive. Those pages link a slide deck per lesson *day*, so
+ * knowing which deck belongs to today means knowing which links sat inside
+ * today's section — and once the markup is gone, every deck on the page looks
+ * equally current. Marking them inline lets the day-slicer carry them along
+ * with the text it selects.
+ *
+ * The angle-quote markers are deliberate: they are not characters a teacher
+ * types, so `stripLinkMarkers` can remove them again without eating real
+ * punctuation. A url makes a line long, which also keeps it from being mistaken
+ * for a dated heading — those are capped at 90 characters.
+ */
+export function htmlToTextWithLinks(html: string): string {
+  const marked = html.replace(
+    /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+    (_match, href: string, inner: string) => `${inner} ⟨${href}⟩`,
+  );
+
+  return htmlToText(marked);
+}
+
+/** Remove the `⟨url⟩` markers again, for text a person or a model will read. */
+export function stripLinkMarkers(text: string): string {
+  return text.replace(/\s*⟨[^⟩]*⟩/g, "").replace(/[ \t]{2,}/g, " ");
+}
