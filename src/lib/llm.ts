@@ -55,6 +55,59 @@ export interface GenerateJsonOptions<T extends z.ZodType> {
   maxOutputTokens?: number;
 }
 
+/**
+ * Keywords strict structured-output modes reject outright.
+ *
+ * Zod emits these from ordinary, reasonable validators — `.min(1)` on a string
+ * becomes minLength, `.max(40)` on an array becomes maxItems, and even
+ * `.int()` emits minimum and maximum for the safe-integer range. A provider in
+ * strict mode does not ignore them; it refuses the whole request with a 400.
+ *
+ * That is a nasty failure because it costs nothing to write and cannot be seen
+ * until a real call is made — the flashcard schema carried eight of these and
+ * would have failed on the first generation anyone paid for. Stripping them
+ * centrally means one place gets it right for every schema, now and later,
+ * instead of every author having to remember an undocumented dialect.
+ *
+ * Nothing of value is lost. These are validators for data the model *produces*,
+ * and Zod still enforces them when parsing the response — so a bad value is
+ * caught, just on the way back rather than by the provider.
+ */
+const UNSUPPORTED_SCHEMA_KEYWORDS = [
+  "minLength",
+  "maxLength",
+  "minimum",
+  "maximum",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+  "minItems",
+  "maxItems",
+  "multipleOf",
+  "pattern",
+  "format",
+  "default",
+];
+
+function sanitiseSchema(node: unknown): Record<string, unknown> {
+  const walk = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(walk);
+    if (!value || typeof value !== "object") return value;
+
+    const out: Record<string, unknown> = {};
+
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      // Both providers reject `$schema`, and the rest are the strict-mode
+      // keywords above.
+      if (key === "$schema" || UNSUPPORTED_SCHEMA_KEYWORDS.includes(key)) continue;
+      out[key] = walk(child);
+    }
+
+    return out;
+  };
+
+  return walk(node) as Record<string, unknown>;
+}
+
 export class LlmError extends Error {
   constructor(
     message: string,
@@ -301,11 +354,9 @@ export async function generateJson<T extends z.ZodType>({
   // Zod's output-side transforms leaking in. Both providers reject the
   // `$schema` key, so drop it. Use `z.strictObject` in callers — strict
   // structured-output modes require `additionalProperties: false`.
-  const jsonSchema = toJSONSchema(schema, { io: "input" }) as Record<
-    string,
-    unknown
-  >;
-  delete jsonSchema.$schema;
+  const jsonSchema = sanitiseSchema(
+    toJSONSchema(schema, { io: "input" }) as Record<string, unknown>,
+  );
 
   let raw: RawCompletion;
 

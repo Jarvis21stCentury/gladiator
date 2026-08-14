@@ -24,18 +24,33 @@ import { prisma } from "@/lib/prisma";
  * reviewing for a month.
  */
 
-const CardSchema = z.object({
-  cards: z
-    .array(
-      z.object({
-        /** Index into the key points supplied, so a card keeps its identity. */
-        sourceIndex: z.number().int().min(0),
-        front: z.string().min(1),
-        back: z.string().min(1),
-        hint: z.string().nullable().optional(),
-      }),
-    )
-    .max(40),
+/*
+ * Written to OpenAI's strict structured-output rules, which are narrower than
+ * Zod and reject a schema outright rather than ignoring what they cannot use.
+ * Three rules bite here, and this schema broke all of them:
+ *
+ *   - every object needs `additionalProperties: false`, so `strictObject`
+ *     rather than `object`;
+ *   - value constraints are unsupported — `.min(1)` becomes minLength,
+ *     `.max(40)` becomes maxItems, and either is a 400;
+ *   - every property must be in `required`, so an optional field has to be
+ *     expressed as nullable instead.
+ *
+ * The bounds are not lost, only moved: `sourceIndex` is range-checked against
+ * the note's key points at the call site, and the card loop already ignores
+ * blank fronts and backs. A model returning forty cards was never the failure
+ * mode worth a schema rule.
+ */
+const CardSchema = z.strictObject({
+  cards: z.array(
+    z.strictObject({
+      /** Index into the key points supplied, so a card keeps its identity. */
+      sourceIndex: z.number().int(),
+      front: z.string(),
+      back: z.string(),
+      hint: z.string().nullable(),
+    }),
+  ),
 });
 
 const SYSTEM_PROMPT = [
