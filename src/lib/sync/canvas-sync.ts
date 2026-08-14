@@ -66,8 +66,28 @@ async function syncViaApi(
       select: { gradeSource: true },
     });
 
+    /*
+     * Canvas does not post a grade for a class HAC knows about.
+     *
+     * HAC is the district gradebook: its average is the one on the report card,
+     * and it is the number the student is actually graded on. Canvas shows
+     * whatever that teacher happens to keep in Canvas, which is often a
+     * fragment — AP Seminar read 60% here off a single quiz while HAC had
+     * posted nothing at all. A number that low, presented as "your grade", is
+     * worse than no number.
+     *
+     * So Canvas fills the gap only for classes HAC has never heard of. For
+     * everything else the choice is HAC's average or an honest blank, and the
+     * page already says "HAC hasn't posted an average yet" for the blank.
+     */
+    const knownToHac =
+      (await prisma.assignment.count({
+        where: { course: { canvasId: course.id }, source: "HAC" },
+      })) > 0;
+
     const mayWriteGrade =
       gradePercent !== null &&
+      !knownToHac &&
       (existing?.gradeSource === null ||
         existing?.gradeSource === undefined ||
         existing.gradeSource === "CANVAS");
