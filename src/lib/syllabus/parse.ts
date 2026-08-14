@@ -5,6 +5,7 @@ import { z } from "zod";
 import { extractFromImage, TextbookExtractionError } from "@/lib/digest/textbook";
 import { generateJson } from "@/lib/llm";
 import { prisma } from "@/lib/prisma";
+import { getSchoolYear } from "@/lib/school-year";
 
 /**
  * The syllabus parser (FEATURES.md Tier 2): drop a PDF in at the start of a
@@ -206,6 +207,7 @@ export async function parseSyllabusText({
   });
 
   const warnings = [...result.data.warnings];
+  const year = await getSchoolYear();
 
   // --- Categories ---------------------------------------------------------
 
@@ -263,6 +265,25 @@ export async function parseSyllabusText({
     const dueAt = endOfDay(item.date);
 
     if (!title || !dueAt) {
+      datesSkipped += 1;
+      continue;
+    }
+
+    /*
+     * Reject dates outside the school year.
+     *
+     * A syllabus prints "Aug 18" with the year implied, and the extractor has
+     * to supply one — so it guesses, and sometimes guesses 2024. Of 176 items
+     * read from real documents, 21 landed outside the year and one was dated
+     * January 2024. Those are invisible in the UI because every list is bounded
+     * by the school year, which is exactly what makes them dangerous: silent
+     * junk that accumulates on every scan and would surface the moment someone
+     * widened a query.
+     */
+    if (dueAt < year.start || dueAt > year.end) {
+      warnings.push(
+        `Skipped "${title}" — ${dueAt.toDateString()} is outside the school year.`,
+      );
       datesSkipped += 1;
       continue;
     }
