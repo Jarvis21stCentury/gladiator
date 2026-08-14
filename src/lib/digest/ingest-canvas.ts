@@ -70,7 +70,10 @@ export async function ingestCanvasContent(
    */
   const courses = (
     await prisma.course.findMany({
-      where: { canvasId: { not: null } },
+      // Hidden classes are enrolments, not classes — homeroom, a club, a
+      // district orientation course. Scanning them spent a model call per
+      // coursework page on courses the student had explicitly dismissed.
+      where: { canvasId: { not: null }, hidden: false },
       select: { id: true, canvasId: true, name: true },
     })
   ).filter(

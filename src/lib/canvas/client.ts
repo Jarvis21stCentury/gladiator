@@ -249,6 +249,32 @@ export class CanvasClient {
   ): Promise<{ url: string; title: string }[]> {
     const refs = new Map<string, string>();
 
+    /*
+     * The course home page, and the pages it links to.
+     *
+     * A third hiding place, and for some classes the only one. Chemistry here
+     * has an empty Pages index and twelve modules containing nothing, but its
+     * home page is a navigation guide linking to "COURSE WORK — Units &
+     * Classwork", an assessment plan and a class Drive. The home page is not in
+     * the Pages index and not in any module, so every scan concluded the course
+     * was empty when in fact it holds everything behind one hop.
+     *
+     * Exactly one hop is followed. Two would wander off into the whole course
+     * and a student's Canvas is not a site to crawl.
+     */
+    const front = await this.getFrontPage(courseId);
+
+    if (front) {
+      if (front.url) refs.set(front.url, front.title || "Home");
+
+      for (const match of (front.body ?? "").matchAll(
+        /\/courses\/\d+\/pages\/([A-Za-z0-9._~%-]+)/g,
+      )) {
+        const url = decodeURIComponent(match[1]);
+        if (!refs.has(url)) refs.set(url, url.replace(/-/g, " "));
+      }
+    }
+
     for (const page of await this.getPages(courseId)) {
       if (!refs.has(page.url)) refs.set(page.url, page.title);
     }
@@ -265,6 +291,25 @@ export class CanvasClient {
     }
 
     return [...refs].map(([url, title]) => ({ url, title }));
+  }
+
+  /**
+   * A course's home page, when it is set to one.
+   *
+   * Null when the course shows modules or the syllabus instead — a normal
+   * configuration, not a failure.
+   */
+  async getFrontPage(courseId: number): Promise<CanvasPage | null> {
+    try {
+      const response = await this.request(
+        `${this.baseUrl}/api/v1/courses/${courseId}/front_page`,
+      );
+
+      return (await response.json()) as CanvasPage;
+    } catch (error) {
+      if (error instanceof CanvasAuthError) throw error;
+      return null;
+    }
   }
 
   /**
