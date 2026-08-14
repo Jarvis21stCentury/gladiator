@@ -162,8 +162,26 @@ function getProvider(): LlmProvider {
  */
 const DEFAULT_MODELS: Record<LlmProvider, Record<LlmQuality, string>> = {
   openai: { fast: "gpt-4o-mini", strong: "gpt-4o-mini" },
-  anthropic: { fast: "claude-haiku-4-5", strong: "claude-opus-5" },
+  // Both tiers are Haiku, for the same reason both OpenAI tiers are mini.
+  // Opus on this workload — one digest call per class per school day — would
+  // cost more per month than a year of the alternative. See RUNAWAY_MODELS.
+  anthropic: { fast: "claude-haiku-4-5", strong: "claude-haiku-4-5" },
 };
+
+/**
+ * Models expensive enough to empty a personal budget before anyone notices.
+ *
+ * This is a guard, not a judgement about the models. The nightly digest runs
+ * once per class per school day unattended, so a frontier model here is not a
+ * slightly larger bill — it is one to two orders of magnitude, discovered when
+ * the credit runs out mid-term. The failure mode of a *cron job* silently
+ * spending money is bad enough to be worth refusing by default.
+ *
+ * Deliberate use is still one variable away: set LLM_ALLOW_EXPENSIVE_MODELS=1.
+ * The point is that it cannot happen by leaving a default alone or mistyping a
+ * model name.
+ */
+const RUNAWAY_MODELS = [/opus/i, /gpt-4\.5/i, /o1-pro/i];
 
 function resolveModel(provider: LlmProvider, quality: LlmQuality): string {
   const override =
@@ -171,7 +189,19 @@ function resolveModel(provider: LlmProvider, quality: LlmQuality): string {
       ? process.env.LLM_MODEL_FAST?.trim()
       : process.env.LLM_MODEL_STRONG?.trim();
 
-  return override || DEFAULT_MODELS[provider][quality];
+  const model = override || DEFAULT_MODELS[provider][quality];
+
+  if (
+    process.env.LLM_ALLOW_EXPENSIVE_MODELS !== "1" &&
+    RUNAWAY_MODELS.some((pattern) => pattern.test(model))
+  ) {
+    throw new LlmError(
+      `Refusing to use "${model}": it is far more expensive than this app's workload assumes, and the digest runs unattended every night. Set LLM_ALLOW_EXPENSIVE_MODELS=1 if you mean it.`,
+      provider,
+    );
+  }
+
+  return model;
 }
 
 function requireApiKey(provider: LlmProvider): string {
