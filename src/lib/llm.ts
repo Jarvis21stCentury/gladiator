@@ -237,7 +237,20 @@ async function callOpenAI(
   jsonSchema: Record<string, unknown>,
   maxOutputTokens: number,
 ): Promise<RawCompletion> {
-  const client = new OpenAI({ apiKey: requireApiKey("openai") });
+  /*
+   * `LLM_BASE_URL` points this at any OpenAI-compatible endpoint — Hack Club's
+   * free tier for students, an OpenRouter key, a self-hosted proxy. The wire
+   * format is identical, so nothing else in this file changes.
+   *
+   * What such a gateway may not have is *strict structured outputs*: it is an
+   * OpenAI feature, and a proxy in front of the same model often does not
+   * implement `response_format.json_schema`. `callOpenAI` handles that by
+   * retrying without it — see the catch below.
+   */
+  const client = new OpenAI({
+    apiKey: requireApiKey("openai"),
+    baseURL: process.env.LLM_BASE_URL?.trim() || undefined,
+  });
 
   const userContent: OpenAI.Chat.ChatCompletionContentPart[] = [
     { type: "text", text: prompt },
@@ -249,18 +262,60 @@ async function callOpenAI(
     ),
   ];
 
-  const response = await client.chat.completions.create({
-    model,
-    max_completion_tokens: maxOutputTokens,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: images.length > 0 ? userContent : prompt },
-    ],
-    response_format: {
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: "system", content: system },
+    { role: "user", content: images.length > 0 ? userContent : prompt },
+  ];
+
+  /*
+   * Strict structured outputs when the endpoint has them, JSON mode when it
+   * does not.
+   *
+   * `json_schema` is an OpenAI feature, and a compatible gateway in front of
+   * the same model frequently does not implement it — it answers 400 with
+   * something about an unsupported response_format. Falling back keeps every
+   * caller working against those endpoints; the schema still gets enforced,
+   * just by Zod on the way back rather than by the provider on the way out.
+   *
+   * The schema is restated in the system prompt for the fallback, because
+   * plain JSON mode guarantees only that the reply parses, not its shape.
+   */
+  const send = (format: OpenAI.Chat.ChatCompletionCreateParams["response_format"]) =>
+    client.chat.completions.create({
+      model,
+      max_completion_tokens: maxOutputTokens,
+      messages:
+        format?.type === "json_object"
+          ? [
+              {
+                role: "system",
+                content: `${system}\n\nReply with JSON only, matching this schema exactly:\n${JSON.stringify(jsonSchema)}`,
+              },
+              messages[1],
+            ]
+          : messages,
+      response_format: format,
+    });
+
+  let response;
+
+  try {
+    response = await send({
       type: "json_schema",
       json_schema: { name: schemaName, schema: jsonSchema, strict: true },
-    },
-  });
+    });
+  } catch (error) {
+    const unsupported =
+      error instanceof OpenAI.APIError &&
+      error.status === 400 &&
+      /response_format|json_schema|not supported|unsupported/i.test(
+        error.message ?? "",
+      );
+
+    if (!unsupported) throw error;
+
+    response = await send({ type: "json_object" });
+  }
 
   // Guard the shape rather than indexing blind — a proxy or gateway returning an
   // unexpected body should surface as a clear LlmError, not a TypeError.
