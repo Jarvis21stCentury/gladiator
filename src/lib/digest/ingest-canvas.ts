@@ -99,7 +99,14 @@ export async function ingestCanvasContent(
    */
   for (const course of courses) {
     try {
-      const page = findCourseworkPage(await client.getPages(course.canvasId));
+      // Both the Pages index and module Page items — this district's template
+      // hides the index, and the weekly coursework pages live in modules.
+      const page = findCourseworkPage(
+        (await client.getAllPageRefs(course.canvasId)).map((ref) => ({
+          url: ref.url,
+          title: ref.title,
+        })),
+      );
       if (!page) continue;
 
       const full = await client.getPage(course.canvasId, page.url);

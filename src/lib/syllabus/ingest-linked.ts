@@ -173,7 +173,7 @@ export async function ingestLinkedSchedules({
 
       // 2. Pages. Schedule-titled ones always; the rest are still scanned
       //    because the link text can carry the signal the title doesn't.
-      const pages = await client.getPages(course.canvasId);
+      const pages = await client.getAllPageRefs(course.canvasId);
       const ordered = [
         ...pages.filter((page) => looksLikeSchedule(page.title)),
         ...pages.filter((page) => !looksLikeSchedule(page.title)),

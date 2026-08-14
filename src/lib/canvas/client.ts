@@ -233,6 +233,41 @@ export class CanvasClient {
   }
 
   /**
+   * Every page in a course, from both places one can live.
+   *
+   * `getPages` reads the Pages *index*, and this district's Canvas template
+   * hides it: five of seven classes here return an empty list while their pages
+   * sit inside modules as Page items — "Q1 | Week 1", "Quarter 1 I Week 1",
+   * "Unit 1 Overview". Any feature that read only the index concluded those
+   * classes had no content, which was wrong about the majority of them.
+   *
+   * Module items win their label (module name plus item title) because it says
+   * where the page sits in the course; the index only has a bare title.
+   */
+  async getAllPageRefs(
+    courseId: number,
+  ): Promise<{ url: string; title: string }[]> {
+    const refs = new Map<string, string>();
+
+    for (const page of await this.getPages(courseId)) {
+      if (!refs.has(page.url)) refs.set(page.url, page.title);
+    }
+
+    for (const canvasModule of await this.getModules(courseId)) {
+      for (const item of canvasModule.items ?? []) {
+        if (item.type !== "Page" || !item.page_url) continue;
+        if (item.published === false) continue;
+
+        if (!refs.has(item.page_url)) {
+          refs.set(item.page_url, `${canvasModule.name} › ${item.title}`);
+        }
+      }
+    }
+
+    return [...refs].map(([url, title]) => ({ url, title }));
+  }
+
+  /**
    * The HTML of a course's Syllabus tab.
    *
    * Not part of the course list payload — `syllabus_body` has to be asked for

@@ -46,6 +46,19 @@ const TITLE_PATTERNS: string[] = [
   "lessonplan",
   "weeklyagenda",
   "weekataglance",
+  /*
+   * Week- and quarter-shaped titles. Not guesses: these are the real page names
+   * in this student's courses — "Q1 | Week 1", "Quarter 1 I Week 1", "Unit 1
+   * Overview" — and they are the daily-coursework page under another name. The
+   * matcher is a contains-check on the normalised title, so "q1week1" is caught
+   * by "week" here.
+   */
+  "week",
+  "quarter",
+  // "Unit 1 Overview" normalises to "unit1overview", so the pattern has to be
+  // the bare word — the digit sits between the two halves.
+  "overview",
+  "calendar",
 ];
 
 /** Lowercase, drop everything that isn't a letter or digit. */

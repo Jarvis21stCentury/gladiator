@@ -309,20 +309,22 @@ async function fetchCoursePages(
     token: config.token!,
   });
 
+  // Both places a page can live — see CanvasClient.getAllPageRefs.
+  const urls = await client.getAllPageRefs(course.canvasId);
+
   const out: { id: string; label: string; rawText: string }[] = [];
 
-  for (const page of (await client.getPages(course.canvasId)).slice(
-    0,
-    MAX_RAW_SOURCES,
-  )) {
-    const full = await client.getPage(course.canvasId, page.url);
+  for (const { url, title: label } of urls) {
+    if (out.length >= MAX_RAW_SOURCES) break;
+
+    const full = await client.getPage(course.canvasId, url);
     if (!full?.body) continue;
 
     const text = htmlToText(full.body).trim();
     // A page that is one line of navigation is not revision material.
     if (text.length < 200) continue;
 
-    out.push({ id: `page:${page.url}`, label: page.title, rawText: text });
+    out.push({ id: `page:${url}`, label, rawText: text });
   }
 
   return out;
