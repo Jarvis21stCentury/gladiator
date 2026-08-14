@@ -250,28 +250,55 @@ export class CanvasClient {
     const refs = new Map<string, string>();
 
     /*
-     * The course home page, and the pages it links to.
+     * The course home page, and two hops of pages from it.
      *
-     * A third hiding place, and for some classes the only one. Chemistry here
-     * has an empty Pages index and twelve modules containing nothing, but its
-     * home page is a navigation guide linking to "COURSE WORK — Units &
-     * Classwork", an assessment plan and a class Drive. The home page is not in
-     * the Pages index and not in any module, so every scan concluded the course
-     * was empty when in fact it holds everything behind one hop.
+     * Some classes hide everything behind this. Chemistry has an empty Pages
+     * index and twelve modules containing nothing; its home page is a
+     * navigation guide linking to a unit list, and the unit list links to the
+     * pages that actually hold the work — "Unit 1: Safety, Equipment, and
+     * Calculations", a day-by-day calendar of topics and presentations. One hop
+     * reached the index of units. Two reaches the units.
      *
-     * Exactly one hop is followed. Two would wander off into the whole course
-     * and a student's Canvas is not a site to crawl.
+     * Two is the limit, and it is a limit rather than a default: a third would
+     * make this a crawler wandering a student's whole Canvas, and the cap below
+     * stops even a pathological course from turning one scan into hundreds of
+     * requests.
      */
+    const CANVAS_PAGE_LINK = /\/courses\/\d+\/pages\/([A-Za-z0-9._~%-]+)/g;
+    const MAX_REFS = 40;
+
+    const linksIn = (html: string) =>
+      [...html.matchAll(CANVAS_PAGE_LINK)].map((match) =>
+        decodeURIComponent(match[1]),
+      );
+
     const front = await this.getFrontPage(courseId);
+    const frontier: string[] = [];
 
     if (front) {
       if (front.url) refs.set(front.url, front.title || "Home");
 
-      for (const match of (front.body ?? "").matchAll(
-        /\/courses\/\d+\/pages\/([A-Za-z0-9._~%-]+)/g,
-      )) {
-        const url = decodeURIComponent(match[1]);
-        if (!refs.has(url)) refs.set(url, url.replace(/-/g, " "));
+      for (const url of linksIn(front.body ?? "")) {
+        if (refs.has(url)) continue;
+        refs.set(url, url.replace(/-/g, " "));
+        frontier.push(url);
+      }
+    }
+
+    // One more level out from whatever the home page pointed at.
+    for (const url of frontier) {
+      if (refs.size >= MAX_REFS) break;
+
+      const page = await this.getPage(courseId, url);
+      if (!page?.body) continue;
+
+      // Keep the page's real title now that we have fetched it — the guess
+      // derived from the url is only a fallback.
+      if (page.title) refs.set(url, page.title);
+
+      for (const next of linksIn(page.body)) {
+        if (refs.size >= MAX_REFS) break;
+        if (!refs.has(next)) refs.set(next, next.replace(/-/g, " "));
       }
     }
 

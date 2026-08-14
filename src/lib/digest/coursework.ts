@@ -59,7 +59,21 @@ const TITLE_PATTERNS: string[] = [
   // the bare word — the digit sits between the two halves.
   "overview",
   "calendar",
+  // A unit page is the coursework page in a class that organises by unit —
+  // Chemistry's "Unit 1: Safety, Equipment, and Calculations" is a day-by-day
+  // calendar of topics. Last in the list, so a page actually named
+  // "Coursework" always wins over it.
+  "unit",
 ];
+
+/**
+ * Titles that name an *index* of coursework rather than coursework.
+ *
+ * "Advanced Chemistry Unit List" matches "unit" exactly as well as "Unit 1:
+ * Safety, Equipment, and Calculations" does, and it is six hundred characters
+ * of links. Picking it would hand the digest a table of contents every night.
+ */
+const INDEX_TITLES = ["list", "index", "home", "teacherinformation", "resources"];
 
 /** Lowercase, drop everything that isn't a letter or digit. */
 function normaliseTitle(title: string): string {
@@ -85,6 +99,7 @@ export function findCourseworkPage<T extends PageLike>(pages: T[]): T | null {
   for (const page of pages) {
     const title = normaliseTitle(page.title ?? "");
     if (!title) continue;
+    if (INDEX_TITLES.some((word) => title.includes(word))) continue;
 
     for (let index = 0; index < TITLE_PATTERNS.length; index += 1) {
       const pattern = TITLE_PATTERNS[index];
