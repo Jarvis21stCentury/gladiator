@@ -63,6 +63,7 @@ const TITLE_PATTERNS: string[] = [
   // Chemistry's "Unit 1: Safety, Equipment, and Calculations" is a day-by-day
   // calendar of topics. Last in the list, so a page actually named
   // "Coursework" always wins over it.
+  "lesson",
   "unit",
 ];
 
