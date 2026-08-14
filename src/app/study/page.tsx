@@ -263,14 +263,20 @@ export default async function StudyPage({
                       : "no cards"}
                   </span>
 
-                  {deck.uncardedNotes > 0 ? (
-                    <CardGenerateButton
-                      courseId={deck.courseId}
-                      label={`Make from ${deck.uncardedNotes} note${deck.uncardedNotes === 1 ? "" : "s"}`}
-                    />
-                  ) : (
-                    <FlashcardForm courses={courses} courseId={deck.courseId} />
-                  )}
+                  {/* Generation is offered whether or not notes exist. With
+                      notes it reads those; without, it reads the raw course
+                      material the ingest collected. Gating this on
+                      `uncardedNotes > 0` is what made "make cards for me"
+                      invisible on a fresh install. */}
+                  <CardGenerateButton
+                    courseId={deck.courseId}
+                    label={
+                      deck.uncardedNotes > 0
+                        ? `Make from ${deck.uncardedNotes} note${deck.uncardedNotes === 1 ? "" : "s"}`
+                        : "Make cards for me"
+                    }
+                  />
+                  <FlashcardForm courses={courses} courseId={deck.courseId} />
                 </li>
               ))}
             </Docket>

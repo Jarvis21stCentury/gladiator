@@ -44,12 +44,19 @@ export function CardGenerateButton({
       const written = body.cardsWritten as number;
       const updated = body.cardsUpdated as number;
 
+      /* Where the cards came from matters: read from the raw course material
+         they are a rougher first pass than cards written from a distilled
+         digest, and the student should know which they are looking at. */
+      const raw = body.fromRawMaterial === true;
+
       setMessage(
         written === 0 && updated === 0
-          ? "Nothing new to make cards from."
+          ? raw
+            ? "Nothing worth a card in the material collected so far."
+            : "Nothing new to make cards from."
           : `${written} new card${written === 1 ? "" : "s"}${
               updated > 0 ? `, ${updated} rewritten` : ""
-            }.`,
+            }${raw ? " — from your course material." : "."}`,
       );
       router.refresh();
     } catch (error) {
