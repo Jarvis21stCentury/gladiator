@@ -50,6 +50,28 @@ async function tokenFor(password: string): Promise<string> {
 }
 
 export async function middleware(request: NextRequest) {
+  /*
+   * Cron jobs cannot type a password.
+   *
+   * Vercel invokes the scheduled routes with no cookie, so gating them behind
+   * the form meant the nightly digest 401'd every night — the gate would have
+   * silently switched off the entire unattended half of the app. They
+   * authenticate with a bearer token instead: Vercel sends
+   * `Authorization: Bearer $CRON_SECRET` whenever CRON_SECRET is defined.
+   *
+   * With CRON_SECRET unset these routes are open, which is exactly where they
+   * were before this file existed. Set it in production.
+   */
+  if (request.nextUrl.pathname.startsWith("/api/cron/")) {
+    const secret = process.env.CRON_SECRET?.trim();
+    if (!secret) return NextResponse.next();
+
+    const header = request.headers.get("authorization") ?? "";
+    return header === `Bearer ${secret}`
+      ? NextResponse.next()
+      : new NextResponse("Unauthorized", { status: 401 });
+  }
+
   const password = process.env.APP_PASSWORD?.trim();
   if (!password) return NextResponse.next();
 

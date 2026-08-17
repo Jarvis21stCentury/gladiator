@@ -112,8 +112,19 @@ export function DocketRow({
         {/* How urgent. Always a mark or text, never the left edge. */}
         <Mark level={submitted ? "calm" : resolved} />
 
+        {/*
+          Wraps rather than truncates.
+
+          A row was one line with `truncate`, which is right for a column of
+          dates and wrong for the thing the row is *for*: assignment titles here
+          run to "Big Idea 1: Collaboration/Input-Output/Sequencing/Program
+          Design and Development", and an ellipsis at 40 characters hid the part
+          that says which one it is. Two lines of a real title beats one line of
+          a guess; `title` still carries the whole thing for a tooltip.
+        */}
         <span
-          className="min-w-0 flex-1 truncate text-[0.875rem]"
+          title={title}
+          className="min-w-0 flex-1 text-[0.875rem] leading-snug [overflow-wrap:anywhere] line-clamp-2"
           style={{
             color: inked ? STATUS_VAR[resolved] : undefined,
             opacity: submitted ? 0.5 : 1,
