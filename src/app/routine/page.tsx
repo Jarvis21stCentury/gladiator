@@ -14,6 +14,7 @@ import {
 } from "@/lib/routine/model";
 import { getRoutine } from "@/lib/routine/routine";
 import { getSchoolYear, toISO } from "@/lib/school-year";
+import { NotificationToggle } from "@/components/NotificationToggle";
 import { SchoolYearForm } from "@/components/SchoolYearForm";
 
 /**
@@ -224,6 +225,23 @@ export default async function RoutinePage() {
               })}
             </Docket>
           </div>
+        </div>
+
+        {/* Notifications live here because this page is already "how the week
+            actually runs" — the routine, the term dates, and now whether the
+            app is allowed to tell you anything when it is closed. */}
+        <div className="mt-[var(--section)]">
+          <SectionHead
+            id="notifications"
+            serial="03"
+            rubric="Reminders"
+            title="Evening reminders"
+          />
+          <p className="prose mb-5 max-w-[54ch] text-[0.95rem] text-ink-soft">
+            One notification each evening with what&apos;s due tomorrow and
+            anything overdue. Nothing is sent on a night with neither.
+          </p>
+          <NotificationToggle />
         </div>
 
         <Rule className="mt-[var(--section)]" />

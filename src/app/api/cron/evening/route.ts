@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { generateDigest } from "@/lib/digest/generate";
+import { sendEveningNotice } from "@/lib/push/digest-notice";
 import { ingestCanvasContent } from "@/lib/digest/ingest-canvas";
 import { generateWeeklyRetro } from "@/lib/retro/weekly";
 import { runStruggleDetection } from "@/lib/struggles/engine";
@@ -86,6 +87,23 @@ async function handle(request: Request) {
       error: error instanceof Error ? error.message : String(error),
     };
     failed = true;
+  }
+
+  /*
+   * Last, and never fatal.
+   *
+   * The sync and the digest are the work; the notification is how the student
+   * finds out it happened. Letting a dead push subscription turn a successful
+   * evening into a 502 would be exactly backwards — and would make the cron
+   * look broken in the Vercel dashboard every night for no reason.
+   */
+  try {
+    results.notify = await sendEveningNotice();
+  } catch (error) {
+    results.notify = {
+      status: "FAILED",
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 
   return NextResponse.json(results, { status: failed ? 502 : 200 });

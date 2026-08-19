@@ -701,3 +701,34 @@ model FlashcardReview {
   @@index([flashcardId])
   @@index([reviewedAt])
 }
+
+/// A browser that has agreed to receive push notifications.
+///
+/// The whole point of the app running unattended: the crons write to the
+/// database every night, and without this nothing ever reaches the student.
+/// They open the app or they hear nothing.
+///
+/// One row per browser, not per student — the same person on a laptop and a
+/// phone is two subscriptions, and both should be notified. The endpoint is
+/// the natural key: the push service issues it and it is unique per browser
+/// install.
+model PushSubscription {
+  id       String @id @default(cuid())
+  /// The push service URL. Unique per browser; the push service owns it.
+  endpoint String @unique
+  /// Client public key, for encrypting the payload.
+  p256dh   String
+  /// Client auth secret.
+  auth     String
+
+  /// What this browser is, so a stale one can be recognised in a list.
+  label String?
+
+  /// Cleared on a successful send, incremented on a failure. A push service
+  /// answers 404 or 410 for a subscription the browser has thrown away, and
+  /// those are deleted rather than retried forever.
+  failures Int @default(0)
+
+  lastSentAt DateTime?
+  createdAt  DateTime  @default(now())
+}
